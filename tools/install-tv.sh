@@ -4,7 +4,9 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${TV_SERIAL:?Set TV_SERIAL to the authorized adb device serial}"
 : "${ANDROID_HOME:?Set ANDROID_HOME to the Android SDK}"
 cd "$root"
-client=app/build/outputs/apk/release/app-release.apk
+abi="$(adb -s "$TV_SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
+case "$abi" in armeabi-v7a|arm64-v8a|x86_64) ;; *) echo "Unsupported device ABI" >&2; exit 1 ;; esac
+client="app/build/outputs/apk/release/app-${abi}-release.apk"
 launcher=launcher/build/outputs/apk/release/launcher-release.apk
 signer="$ANDROID_HOME/build-tools/34.0.0/apksigner"
 [[ -f "$client" && -f "$launcher" ]] || { echo 'Build both APKs first.' >&2; exit 1; }

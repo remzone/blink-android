@@ -28,7 +28,7 @@ public final class NetworkSettingsActivity extends Activity {
     private static final Uri STATUS=Uri.parse("content://com.remzone.blink.status/state");
     private static final ComponentName CLIENT=new ComponentName("com.remzone.blink.tv","com.remzone.blink.tv.NetworkActivity");
     private final Handler main=new Handler(Looper.getMainLooper());
-    private TextView state,detail,subscription,diagnostic;private Button toggle;private boolean active;
+    private TextView state,detail,subscription,diagnostic;private Button toggle,captcha;private boolean active;
     private final ContentObserver observer=new ContentObserver(main){@Override public void onChange(boolean self){refresh();}};
     @Override protected void attachBaseContext(android.content.Context context){super.attachBaseContext(LauncherLocale.wrap(context));}
     @Override public void onCreate(Bundle saved){
@@ -36,6 +36,7 @@ public final class NetworkSettingsActivity extends Activity {
         TextView title=text("Сетевые настройки",30,Color.WHITE);title.setTypeface(null,Typeface.BOLD);root.addView(title);root.addView(text("Обычная сеть и туннель Blink",16,0xff9eafc3));
         state=text("Blink не установлен",25,0xff65dfc3);root.addView(state);detail=text("",15,0xffc5d3e2);root.addView(detail);
         toggle=button(root,"Подключить туннель",this::toggle);
+        captcha=button(root,"Пройти проверку VK",()->openClient("captcha",false));captcha.setVisibility(android.view.View.GONE);
         subscription=text("",15,0xffc5d3e2);root.addView(subscription);
         button(root,"Подписка и профили Vokop",()->openClient("subscription",false));
         button(root,"Режим туннеля и диагностика",()->openClient("diagnostics",false));
@@ -53,10 +54,11 @@ public final class NetworkSettingsActivity extends Activity {
         try(Cursor c=getContentResolver().query(STATUS,null,null,null,null)){
             if(c==null||!c.moveToFirst())throw new IllegalStateException();
             String value=c.getString(c.getColumnIndexOrThrow("state"));active="ready".equals(value)||"connecting".equals(value);
+            int pendingColumn=c.getColumnIndex("pendingCaptcha");boolean pending=pendingColumn>=0&&c.getInt(pendingColumn)!=0;active=active||pending;captcha.setVisibility(pending?android.view.View.VISIBLE:android.view.View.GONE);
             String mode=c.getString(c.getColumnIndexOrThrow("mode"));state.setText("Blink · "+c.getString(c.getColumnIndexOrThrow("label")));detail.setText(c.getString(c.getColumnIndexOrThrow("detail"))+"\nРежим: "+("direct".equals(mode)?"Прямой UDP — проверка сервера":"VK TURN"));
             long expiry=c.getLong(c.getColumnIndexOrThrow("expiresAt"));subscription.setText(c.getString(c.getColumnIndexOrThrow("profile"))+(expiry>0?"\nДо "+DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(expiry*1000)):""));
             diagnostic.setText(c.getString(c.getColumnIndexOrThrow("probe")));toggle.setText(active?"Отключить туннель":"Подключить туннель");
-        }catch(Exception unavailable){active=false;state.setText("Blink не настроен");detail.setText("Установите клиент Blink с той же подписью, что и лаунчер.");subscription.setText("Подписка не добавлена");diagnostic.setText("");toggle.setText("Открыть Blink");}
+        }catch(Exception unavailable){captcha.setVisibility(android.view.View.GONE);active=false;state.setText("Blink не настроен");detail.setText("Установите клиент Blink с той же подписью, что и лаунчер.");subscription.setText("Подписка не добавлена");diagnostic.setText("");toggle.setText("Открыть Blink");}
     }
     private void toggle(){try{Bundle result=getContentResolver().call(STATUS,"toggle",null,null);if(result==null||result.getBoolean("needsConsent")||result.getBoolean("needsSubscription"))openClient("connection",true);else refresh();}catch(Exception e){openClient("connection",false);}}
     private void openClient(String screen,boolean requestConnect){try{startActivityForResult(new Intent().setComponent(CLIENT).putExtra("screen",screen).putExtra("requestConnect",requestConnect),48);}catch(Exception e){Toast.makeText(this,"Клиент Blink ещё не установлен",Toast.LENGTH_LONG).show();}}

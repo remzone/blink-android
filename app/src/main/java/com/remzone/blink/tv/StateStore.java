@@ -9,6 +9,6 @@ final class StateStore {
     static volatile long tx,rx,rtt;
     static void set(Context c,String value,String description){state=value;detail=description;notifyChanged(c);}
     static void notifyChanged(Context c){c.getContentResolver().notifyChange(URI,null);}
-    static boolean active(){return "connecting".equals(state)||"ready".equals(state);}
+    static boolean active(){return "connecting".equals(state)||"ready".equals(state)||("captcha_required".equals(state)&&TunnelService.hasPendingCaptcha());}
     static String label(){switch(state){case "ready":return "Подключён";case "connecting":return "Подключение…";case "captcha_required":return "VK требует CAPTCHA";case "error":return "Ошибка подключения";default:return "Отключён";}}
 }

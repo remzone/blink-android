@@ -26,12 +26,13 @@ var ErrCaptchaRequired = errors.New("captcha_required")
 type Config struct {
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
 	// It is not a tunnel DNS server; all queries are socket-protected.
-	DNSServer string
-	Direct    bool
-	PeerHost  string
-	PeerPort  int
-	VKCallURL string
-	Streams   int
+	DNSServer     string
+	ManualCaptcha bool
+	Direct        bool
+	PeerHost      string
+	PeerPort      int
+	VKCallURL     string
+	Streams       int
 }
 
 type sessionFactory func(context.Context, *net.UDPAddr) (*smux.Session, func(), error)
@@ -40,6 +41,8 @@ type sessionFactory func(context.Context, *net.UDPAddr) (*smux.Session, func(), 
 // External sockets require a non-nil fail-closed protector. The callback must
 // return promptly and must not retain fd: it is valid only during the callback.
 type Client struct {
+	captchaMu                       sync.Mutex
+	challenge                       *captchaChallenge
 	ctx                             context.Context
 	cancel                          context.CancelFunc
 	networkCtx                      context.Context
@@ -151,6 +154,12 @@ func (c *Client) Close() error          { c.cancel(); <-c.done; return nil }
 func (c *Client) setState(s string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.captchaMu.Lock()
+	waiting := c.challenge != nil && !c.challenge.submitted
+	c.captchaMu.Unlock()
+	if waiting && s != "captcha_required" && s != "stopped" {
+		return
+	}
 	if c.state == s || (c.paused.Load() && s != "captcha_required" && s != "stopped") {
 		return
 	}

@@ -15,14 +15,15 @@ import (
 )
 
 type VKProfile struct {
-	DNSServer string `json:"dnsServer"`
-	Mode      string `json:"mode"`
-	UUID      string `json:"uuid"`
-	PeerHost  string `json:"peerHost"`
-	PeerPort  int    `json:"peerPort"`
-	VKCallURL string `json:"vkCallURL"`
-	Streams   int    `json:"streams"`
-	ExpiresAt int64  `json:"expiresAt"`
+	DNSServer     string `json:"dnsServer"`
+	ManualCaptcha bool   `json:"manualCaptcha"`
+	Mode          string `json:"mode"`
+	UUID          string `json:"uuid"`
+	PeerHost      string `json:"peerHost"`
+	PeerPort      int    `json:"peerPort"`
+	VKCallURL     string `json:"vkCallURL"`
+	Streams       int    `json:"streams"`
+	ExpiresAt     int64  `json:"expiresAt"`
 }
 
 // StartVK uses the same KCP/smux/TURN wire protocol as the pinned server.
@@ -47,7 +48,7 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > now+2678400 {
 		return nil, errors.New("invalid or expired subscription")
 	}
-	transport, err := vkturn.Start(context.Background(), vkturn.Config{PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct"}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
+	transport, err := vkturn.Start(context.Background(), vkturn.Config{PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
 	if err != nil {
 		return nil, errors.New("VK transport initialization failed")
 	}
@@ -84,4 +85,22 @@ func (e *Engine) Status() string {
 		return e.vkTransport.Status()
 	}
 	return "running"
+}
+
+// CaptchaJSON is a private UI API; do not expose it to launcher providers or logs.
+func (e *Engine) CaptchaJSON() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.vkTransport == nil {
+		return "{}"
+	}
+	return e.vkTransport.CaptchaJSON()
+}
+func (e *Engine) SubmitCaptcha(id, kind, value string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.vkTransport == nil {
+		return false
+	}
+	return e.vkTransport.SubmitCaptcha(id, kind, value)
 }

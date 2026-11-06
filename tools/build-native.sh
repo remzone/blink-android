@@ -10,5 +10,5 @@ export PATH="$GOBIN:$JAVA_HOME/bin:$PATH"
 cd "$root/native"
 go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
 # Xray/anet requires this flag on Android with Go >= 1.23 (upstream build instructions).
-gomobile bind -target="${BLINK_TARGETS:-android/arm,android/arm64}" -androidapi 26 \
+gomobile bind -target="${BLINK_TARGETS:-android/arm,android/arm64,android/amd64}" -androidapi 26 \
   -ldflags='-s -w -checklinkname=0' -o blinkcore.aar ./mobile
