@@ -14,8 +14,10 @@ final class Subscription {
     static final class Profile {
         final String id,name,uuid,host,call;final int port,streams;
         Profile(String i,String n,String u,String h,int p,String c,int s){id=i;name=n;uuid=u;host=h;port=p;call=c;streams=s;}
-        String nativeJSON(String mode,String dns,long expiry)throws Exception{
-            return new JSONObject().put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
+        String nativeJSON(String mode,String dns,long expiry)throws Exception{return nativeJSON(mode,dns,expiry,"tcp");}
+        String nativeJSON(String mode,String dns,long expiry,String transport)throws Exception{
+            if(!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите TCP или UDP для VK");
+            return new JSONObject().put("turnTransport",transport).put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
         }
     }
     static String validateURL(String raw)throws Exception{

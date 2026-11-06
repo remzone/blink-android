@@ -5,7 +5,7 @@ import android.net.Uri;
 
 final class StateStore {
     static final Uri URI=Uri.parse("content://com.remzone.blink.status/state");
-    static volatile String state="stopped",detail="Туннель отключён",mode="vk",probe="Проверка ещё не выполнялась",egress="";
+    static volatile String turnTransport="tcp",timings="",state="stopped",detail="Туннель отключён",mode="vk",probe="Проверка ещё не выполнялась",egress="";
     static volatile long tx,rx,rtt;
     static void set(Context c,String value,String description){state=value;detail=description;notifyChanged(c);}
     static void notifyChanged(Context c){c.getContentResolver().notifyChange(URI,null);}

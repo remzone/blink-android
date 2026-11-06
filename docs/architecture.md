@@ -4,6 +4,12 @@ Android VpnService создаёт TUN только после готовност
 
 За туннель направляются публичные IPv4 и IPv6; IPv4 LAN, loopback, link-local и multicast остаются локальными. DNS приложения отправляется через VPN. Bootstrap DNS ядра защищён от захвата VPN. VPN не требует root, always-on или отключения штатной сети.
 
+## Транспорт и диагностика
+
+Настройка устройства `turnTransport` принимает только `tcp` и `udp`; без неё используется TCP. Она проходит из зашифрованных настроек в mobile.VKProfile и vkturn.Config. Для UDP используется защищённый connected UDP socket, для TCP — STUN framing поверх защищённого TCP socket. Адрес TURN выдаёт VK, DTLS/KCP/smux и серверная совместимость не меняются. Ошибка UDP не включает TCP или прямой режим автоматически.
+
+Диагностический HTTPS-запрос использует DNS и SocketFactory конкретной активной Android VPN-сети. После ответа проверяется, что та же VPN-сеть остаётся активной. Сертификат проверяется системным SSLSocketFactory с HTTPS hostname verification. Из DNS-ответа выбирается IPv4, затем отдельно измеряются подключение TCP, TLS и время до первого байта HTTP. Это малый запрос, не speed test; IPv6 этим запросом не оценивается.
+
 ## Подписка
 
 Только `vokop.subscription.v1`: `revision`, `issued_at`, `expires_at`, непустой `profiles`. Профиль содержит `id`, `name`, `vless.uuid`, `turn.peer_host`, `peer_port`, `vk_call_url`, `streams`. Принимаются vk.com/vk.ru и www с HTTPS `/call/join/TOKEN`. Числа проверяются по типу и диапазону, JSON — на дубли ключей и неоднозначные расширения. Истёкшие, чрезмерно длительные и откатившиеся по revision документы не применяются.

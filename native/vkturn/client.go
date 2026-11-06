@@ -27,6 +27,7 @@ type Config struct {
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
 	// It is not a tunnel DNS server; all queries are socket-protected.
 	DNSServer     string
+	TURNTransport string
 	ManualCaptcha bool
 	Direct        bool
 	PeerHost      string
@@ -82,6 +83,9 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	u, err := url.Parse(cfg.VKCallURL)
 	if err != nil || u.Scheme != "https" || (u.Host != "vk.com" && u.Host != "www.vk.com" && u.Host != "vk.ru" && u.Host != "www.vk.ru") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !regexp.MustCompile(`^/call/join/[A-Za-z0-9_=-]+$`).MatchString(u.Path) || u.RawPath != "" {
 		return nil, errors.New("invalid VK call URL")
+	}
+	if cfg.TURNTransport != "" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
+		return nil, errors.New("invalid TURN transport")
 	}
 	if net.ParseIP(cfg.DNSServer) == nil || cfg.Streams < 1 || cfg.Streams > 16 || cfg.PeerPort < 1 || cfg.PeerPort > 65535 || !validHost(cfg.PeerHost) {
 		return nil, errors.New("invalid transport configuration")
