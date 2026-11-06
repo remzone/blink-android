@@ -1,7 +1,19 @@
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item><item name="android:colorAccent">#65DFC3</item>
-        <item name="android:windowBackground">#0D1520</item><item name="android:windowLightStatusBar">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#93E8D1</item>
+        <item name="android:windowBackground">#080D18</item>
+        <item name="android:colorBackground">#131D2C</item>
+        <item name="android:textColorPrimary">#F2F6FF</item>
+        <item name="android:textColorSecondary">#A6B3CA</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowAnimationStyle">@style/BlinkWindowMotion</item>
+    </style>
+    <style name="BlinkWindowMotion">
+        <item name="android:activityOpenEnterAnimation">@anim/blink_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/blink_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/blink_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/blink_exit</item>
     </style>
 </resources>

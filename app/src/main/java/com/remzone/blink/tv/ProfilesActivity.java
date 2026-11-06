@@ -21,7 +21,7 @@ public final class ProfilesActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
     private SecureStore store;
-    private TextView note,count;
+    private TextView note,count,emptyTitle,emptyDetail;
     private ListView list;
     private String filter="";
     private boolean busy;
@@ -36,16 +36,17 @@ public final class ProfilesActivity extends Activity {
     }
     @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
     private void render(){
-        LinearLayout page=BlinkStyle.page(this,"BLINK  /  VPN-профили","Страны, серверы и подписки · подключение без VK и CAPTCHA");
-        boolean wide=DeviceLayout.twoColumns(getResources().getConfiguration().screenWidthDp);
+        LinearLayout page=BlinkStyle.page(this,"Мир ближе, чем кажется.","Твои серверы и подписки. Найди своё подключение.");
+        boolean wide=DeviceLayout.twoColumns(getResources().getConfiguration());
         LinearLayout panels=new LinearLayout(this);panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);page.addView(panels);
         LinearLayout profiles=BlinkStyle.card(this,panels,"Страны и серверы");
         LinearLayout tools=BlinkStyle.card(this,panels,"Подписки и импорт");
         if(wide){LinearLayout.LayoutParams left=(LinearLayout.LayoutParams)profiles.getLayoutParams();left.width=0;left.weight=1.2f;left.rightMargin=BlinkStyle.dp(this,16);profiles.setLayoutParams(left);LinearLayout.LayoutParams right=(LinearLayout.LayoutParams)tools.getLayoutParams();right.width=0;right.weight=1;tools.setLayoutParams(right);}
-        EditText search=new EditText(this);search.setSingleLine(true);search.setHint("Страна или название сервера");search.setTextColor(BlinkStyle.TEXT);search.setHintTextColor(BlinkStyle.MUTED);profiles.addView(search);search.setText(filter);
-        list=new ListView(this);list.setDivider(null);list.setItemsCanFocus(false);list.setSelector(new android.graphics.drawable.ColorDrawable(0xff286861));
-        adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,labels){@Override public android.view.View getView(int position,android.view.View recycled,android.view.ViewGroup parent){TextView row=(TextView)super.getView(position,recycled,parent);row.setTextColor(BlinkStyle.TEXT);row.setTextSize(16);row.setMinHeight(BlinkStyle.dp(ProfilesActivity.this,56));row.setPadding(BlinkStyle.dp(ProfilesActivity.this,12),BlinkStyle.dp(ProfilesActivity.this,10),BlinkStyle.dp(ProfilesActivity.this,12),BlinkStyle.dp(ProfilesActivity.this,10));return row;}};
+        EditText search=new EditText(this);search.setSingleLine(true);search.setHint("Страна или название сервера");BlinkStyle.input(this,search);profiles.addView(search);search.setText(filter);
+        list=new ListView(this);list.setDividerHeight(BlinkStyle.dp(this,8));list.setItemsCanFocus(false);list.setSelector(BlinkStyle.surface(0xff253e4a,BlinkStyle.ACCENT,16,this));
+        adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,labels){@Override public android.view.View getView(int position,android.view.View recycled,android.view.ViewGroup parent){TextView row=(TextView)super.getView(position,recycled,parent);row.setTextColor(BlinkStyle.TEXT);row.setTextSize(15);row.setCompoundDrawablePadding(BlinkStyle.dp(ProfilesActivity.this,12));BlinkIcon symbol=new BlinkIcon(labels.get(position).startsWith("✓")?"shield":"globe",BlinkStyle.ACCENT);symbol.setBounds(0,0,BlinkStyle.dp(ProfilesActivity.this,23),BlinkStyle.dp(ProfilesActivity.this,23));row.setCompoundDrawablesRelative(symbol,null,null,null);row.setMinHeight(BlinkStyle.dp(ProfilesActivity.this,56));row.setPadding(BlinkStyle.dp(ProfilesActivity.this,12),BlinkStyle.dp(ProfilesActivity.this,10),BlinkStyle.dp(ProfilesActivity.this,12),BlinkStyle.dp(ProfilesActivity.this,10));return row;}};
         list.setAdapter(adapter);profiles.addView(list,new LinearLayout.LayoutParams(-1,BlinkStyle.dp(this,DeviceLayout.isTV(this)?260:300)));
+        LinearLayout empty=BlinkStyle.column(this);empty.setGravity(android.view.Gravity.CENTER);empty.setPadding(BlinkStyle.dp(this,12),BlinkStyle.dp(this,24),BlinkStyle.dp(this,12),BlinkStyle.dp(this,24));android.widget.ImageView globe=new android.widget.ImageView(this);globe.setImageDrawable(new BlinkIcon("globe",BlinkStyle.ACCENT));globe.setImportantForAccessibility(android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO);empty.addView(globe,new LinearLayout.LayoutParams(BlinkStyle.dp(this,48),BlinkStyle.dp(this,48)));emptyTitle=BlinkStyle.text(this,"Твой мир начинается здесь",19,BlinkStyle.TEXT);emptyTitle.setGravity(android.view.Gravity.CENTER);empty.addView(emptyTitle);emptyDetail=BlinkStyle.text(this,"Добавь ссылку или подписку — серверы появятся здесь.",13,BlinkStyle.MUTED);emptyDetail.setGravity(android.view.Gravity.CENTER);empty.addView(emptyDetail);profiles.addView(empty);list.setEmptyView(empty);
         count=BlinkStyle.text(this,"",13,BlinkStyle.MUTED);profiles.addView(count);list.setOnItemClickListener((parent,view,position,id)->choose(indices.get(position)));
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int before,int after){}public void onTextChanged(CharSequence s,int start,int before,int after){filter=s.toString();renderProfiles();}public void afterTextChanged(android.text.Editable text){}});
         note=BlinkStyle.text(this,"URI · Xray JSON · Clash · WireGuard · AmneziaWG · TUIC · Hysteria",14,BlinkStyle.MUTED);tools.addView(note);
@@ -54,18 +55,18 @@ public final class ProfilesActivity extends Activity {
         BlinkStyle.button(this,tools,"Обновить подписку VPN",this::refreshFeed);
         BlinkStyle.button(this,tools,"Удалить выбранный профиль",this::removeSelected);
         BlinkStyle.button(this,tools,"Назад к соединению",this::finish);
-        renderProfiles();
+        renderProfiles();if(DeviceLayout.isTV(this))list.requestFocus();
     }
     private void renderProfiles(){
         labels.clear();indices.clear();
-        try{JSONObject saved=store.load();JSONArray profiles=saved.optJSONArray("vpnProfiles");int total=profiles==null?0:profiles.length();for(int i=0;i<total;i++){JSONObject p=profiles.getJSONObject(i);String name=p.optString("name","VPN"),kind=p.optString("kind");if(!(name+" "+kind).toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT)))continue;indices.add(i);labels.add((saved.optInt("vpnSelected",0)==i&&"profile".equals(saved.optString("mode"))?"✓ ":"")+name+"\n"+kind);}adapter.notifyDataSetChanged();count.setText("Найдено: "+labels.size()+" · всего: "+total);}
+        try{JSONObject saved=store.load();JSONArray profiles=saved.optJSONArray("vpnProfiles");int total=profiles==null?0:profiles.length();for(int i=0;i<total;i++){JSONObject p=profiles.getJSONObject(i);String name=p.optString("name","VPN"),kind=p.optString("kind");if(!(name+" "+kind).toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT)))continue;indices.add(i);labels.add((saved.optInt("vpnSelected",0)==i&&"profile".equals(saved.optString("mode"))?"✓ ":"")+name+"\n"+kind);}adapter.notifyDataSetChanged();emptyTitle.setText(total==0?"Твой мир начинается здесь":"Такого сервера пока нет");emptyDetail.setText(total==0?"Добавь ссылку или подписку — серверы появятся здесь.":"Попробуй другое название страны или очисти поиск.");count.setText("Найдено: "+labels.size()+" · всего: "+total);}
         catch(Exception e){if(note!=null)note.setText("Не удалось прочитать защищённые профили");}
     }
     private boolean canEdit(){if(busy){note.setText("Дождитесь завершения импорта");return false;}if(StateStore.active()){note.setText("Сначала отключите текущий туннель для изменения профилей");return false;}return true;}
     private void choose(int index){if(!canEdit())return;try{store.update(current->{JSONArray a=current.getJSONArray("vpnProfiles");if(index<0||index>=a.length())throw new Exception();current.put("vpnSelected",index).put("mode","profile");});StateStore.mode="profile";StateStore.notifyChanged(this);renderProfiles();note.setText("Профиль выбран. Вернитесь к соединению и подключите туннель.");}catch(Exception e){note.setText("Не удалось сохранить профиль");}}
     private void removeSelected(){if(!canEdit())return;new AlertDialog.Builder(this).setTitle("Удалить выбранный VPN-профиль?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(dialog,which)->{try{store.update(current->{JSONArray old=current.optJSONArray("vpnProfiles"),next=new JSONArray();int selected=current.optInt("vpnSelected",0);if(old!=null)for(int i=0;i<old.length();i++)if(i!=selected)next.put(old.get(i));current.put("vpnProfiles",next).put("vpnSelected",0);});renderProfiles();StateStore.notifyChanged(this);}catch(Exception e){note.setText("Не удалось удалить профиль");}}).show();}
     private void paste(String initial){
-        if(!canEdit())return;EditText input=new EditText(this);input.setMinLines(2);input.setMaxLines(DeviceLayout.isTV(this)?4:6);input.setTextSize(14);input.setVerticalScrollBarEnabled(true);input.setSaveEnabled(false);input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_VARIATION_PASSWORD);input.setText(initial);
+        if(!canEdit())return;EditText input=new EditText(this);input.setMinLines(2);input.setMaxLines(DeviceLayout.isTV(this)?4:6);input.setTextSize(14);BlinkStyle.input(this,input);input.setVerticalScrollBarEnabled(true);input.setSaveEnabled(false);input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_VARIATION_PASSWORD);input.setText(initial);
         new AlertDialog.Builder(this).setTitle("Ссылка или конфигурация").setMessage("URI, HTTPS-подписка, JSON, Clash или WireGuard/AmneziaWG .conf. Неподдерживаемые параметры отклоняются.").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Импортировать",(dialog,which)->importText(input.getText().toString())).show();
     }
     private void openFile(){if(!canEdit())return;try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),77);}catch(android.content.ActivityNotFoundException e){note.setText("На этом ТВ нет системного выбора файла. Используйте «Поделиться», вставку или HTTPS-ссылку.");}}
