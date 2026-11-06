@@ -1,0 +1,11 @@
+.gradle/
+**/build/
+local.properties
+work/
+.cache/
+native/*.aar
+native/*-sources.jar
+*.apk
+*.keystore
+*.jks
+__pycache__/
