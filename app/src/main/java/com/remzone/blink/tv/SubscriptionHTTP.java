@@ -25,9 +25,9 @@ final class SubscriptionHTTP {
             if(status==401||status==403)throw new Exception("Доступ к подписке закрыт. Проверьте её у администратора.");
             if(status>=300&&status<400)throw new Exception("Перенаправление ссылки подписки запрещено");
             if(status!=200)throw new Exception("Панель временно не выдала подписку");
-            if(c.getContentLengthLong()>131072)throw new Exception("Ответ панели слишком большой");
+            if(c.getContentLengthLong()>1048576)throw new Exception("Ответ панели слишком большой");
             try(InputStream in=c.getInputStream();ByteArrayOutputStream out=new ByteArrayOutputStream()){
-                byte[] buffer=new byte[4096];int count;while((count=in.read(buffer))!=-1){if(out.size()+count>131072)throw new Exception("Ответ панели слишком большой");out.write(buffer,0,count);}
+                byte[] buffer=new byte[4096];int count;while((count=in.read(buffer))!=-1){if(out.size()+count>1048576)throw new Exception("Ответ панели слишком большой");out.write(buffer,0,count);}
                 return out.toString(StandardCharsets.UTF_8.name());
             }
         }catch(javax.net.ssl.SSLException e){throw new Exception("HTTPS-сертификат панели не прошёл проверку");}

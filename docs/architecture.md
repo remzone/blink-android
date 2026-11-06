@@ -1,3 +1,13 @@
+# Дополнение 0.5.0
+
+JSON импортирует одиночный Xray config или массив именованных configs. Сохраняются outbounds, streamSettings, mux, routing, DNS, policy, stats, observatory/balancers. Desktop listeners удаляются, tag/sniffing/userLevel выбранного inbound переносятся в TUN context. Для JSON не навязывается DNS-over-TCP: действуют исходные DNS/routing. Внешние файлы, API/reverse и платформенные socket overrides отклоняются. Geodata встроена и распаковывается в приватный каталог.
+
+TUIC v5 и legacy Hysteria v1 используют официальный sing-quic и защищённые физические UDP-сокеты; JSON Xray обслуживается Xray. WireGuard URI/AWG vpn:// нормализуются в тот же проверяемый INI backend. Clash импортирует узлы с явным предупреждением о неприменении групп/правил/DNS. Пределы: 1 МиБ / 1024 профиля / 4 МиБ encrypted vault. SecureStore выполняет изменения атомарно; обновление feed сохраняет другие feeds и выбор узла по исходнику, затем имени/типу.
+
+Диагностика привязывает запрос к явно выбранной Android Network. Физический запрос дополнительно защищает сокет от VPN; запрос туннеля требует ready и активную TRANSPORT_VPN до/после измерения. Тихого перехода к физической сети нет. HTTPS204 не ждёт закрытия keepalive-соединения. Успешная инициализация ядра сама по себе не доказывает удалённый handshake.
+
+Подробная [матрица](protocols.md). Ниже описана базовая архитектура; правила принудительного TCP DNS относятся к URI/VK, а не к пользовательскому Xray JSON.
+
 # Архитектура
 
 Android VpnService создаёт TUN только после готовности транспорта; отдельный поток читает неблокирующий дескриптор через poll и передаёт IP-пакеты в gomobile Engine.Input. Go использует пакетный стек Xray либо официальный WireGuard/AmneziaWG backend, а выходящие пакеты возвращает в TUN. Внешние сокеты VK, DNS, TURN и direct UDP защищены VpnService.protect, иначе они попали бы обратно в VPN.

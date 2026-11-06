@@ -1,1 +1,2 @@
 *.bat whitespace=cr-at-eol
+native/resources/*.dat binary

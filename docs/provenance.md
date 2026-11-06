@@ -30,3 +30,10 @@ Android-сборке Xray/anet требуется `-checklinkname=0` при Go >
 
 Все версии транзитивных зависимостей закреплены в go.mod/go.sum. Новые MIT
 компоненты не меняют GPL-лицензию интеграции и условия других зависимостей.
+
+## Дополнения 0.5.0
+
+- Официальный [SagerNet/sing-quic](https://github.com/SagerNet/sing-quic), v0.7.1, GPL-3.0-or-later: TUIC v5 и legacy Hysteria v1. Все транзитивные версии закреплены в go.mod/go.sum.
+- `gopkg.in/yaml.v3` v3.0.1, MIT/Apache-2.0: ограниченный parser узлов Clash. Формат Clash не означает использование его routing engine.
+- `native/resources/`: geoip/geosite из официального дистрибутива Xray, сохранены LICENSE и UPSTREAM.md с SHA256 архива/файлов. Это данные для пользовательских JSON routing rules.
+- `native/mobile/testdata/panel-exports.json`: синтетический контракт реальных экспортёров remzone/vokop-panel; живых реквизитов нет.

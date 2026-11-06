@@ -2,7 +2,9 @@
 
 Android-клиент Xray / WireGuard / AmneziaWG и панели Vokop, персональный лаунчер с разделом **Сетевые настройки**.
 
-**0.4.0:** обычные VPN-профили подключаются без VK и CAPTCHA. Импорт URI, plain/base64 HTTPS-подписок и WireGuard/AmneziaWG `.conf`; отдельное обновление каждой подписки. Поддержаны VLESS, VMess AEAD, Trojan, Shadowsocks, SOCKS5 и Hysteria2 через Xray. [Точная матрица форматов, маршруты и ограничения](docs/protocols.md). OpenVPN, Cisco AnyConnect и Forti не добавлены.
+**0.5.0:** импорт именованных Xray JSON-профилей и массивов, узлов Clash/Mihomo YAML, TUIC v5, legacy Hysteria v1, WG URI и AWG `vpn://` панели. Сохранены расширенные Xray streamSettings, mux, routing, DNS, sniffing, policy и geodata; неподдержанные параметры отклоняются. [Матрица всех типов панели и ограничения](docs/protocols.md). Обычные профили подключаются без VK/CAPTCHA. OpenVPN, Cisco AnyConnect и Forti не добавлены.
+
+Менеджер профилей поддерживает поиск страны/названия, до1024 узлов и независимое обновление подписок; на ТВ список виртуализирован. Импорт: вставка, файл или Android «Поделиться» с подтверждением. Диагностика отдельно проверяет физический IP, IP туннеля, Google и YouTube через HTTPS; это не ICMP и не проверка скорости видео. Новые экраны используют общую палитру и фокус для пульта.
 
 - Подключение/отключение туннеля пультом, подписка, выбор профиля, срок действия и обновление ссылки.
 - VK TURN через явно выбранный TCP или UDP → DTLS → KCP → smux → VLESS. TCP используется по умолчанию. Отдельный ручной **прямой UDP** режим проверяет сервер без VK. Автоматического перехода между режимами нет.
@@ -11,7 +13,7 @@ Android-клиент Xray / WireGuard / AmneziaWG и панели Vokop, пер�
 
 `app/` — клиент `com.remzone.blink.tv`, `launcher/` — обновление персонального `com.gathin.tvhome`. Лаунчер не получает INTERNET и ключи подписки. Он читает состояние и переключает сервис через provider с permission уровня signature. Оба APK должны быть подписаны одним ключом.
 
-С версии 0.3.1 режимы Xray/VK используют IPv4. WireGuard/AmneziaWG в 0.4.0 следуют явно заданным адресам и маршрутам `.conf`. Неработающий IPv6-путь на стенде давал длительные TLS-таймауты, поэтому IPv6-адрес, маршруты и DNS удалены из VpnService. IPv6 блокируется Android для этой VPN-сети, а не выпускается в обход туннеля; IPv6-only ресурсы пока не поддерживаются. Поддержку IPv6 для Xray/VK нужно возвращать после отдельной проверки выхода сервера. В 0.4.0 DNS для Xray/VK передаётся по TCP внутри прокси, AAAA возвращается пустым; DNS WireGuard/AmneziaWG берётся из `.conf`. Поведение семейства без адреса/маршрута/DNS описано в [Android VpnService.Builder](https://developer.android.com/reference/android/net/VpnService.Builder#allowFamily(int)).
+С версии 0.3.1 режимы Xray/VK используют IPv4. WireGuard/AmneziaWG в 0.4.0 следуют явно заданным адресам и маршрутам `.conf`. Неработающий IPv6-путь на стенде давал длительные TLS-таймауты, поэтому IPv6-адрес, маршруты и DNS удалены из VpnService. IPv6 блокируется Android для этой VPN-сети, а не выпускается в обход туннеля; IPv6-only ресурсы пока не поддерживаются. Поддержку IPv6 для Xray/VK нужно возвращать после отдельной проверки выхода сервера. Для URI-профилей Xray/VK DNS передаётся по TCP внутри прокси, AAAA возвращается пустым; Xray JSON сохраняет собственные DNS/routing, включая явно настроенные direct-правила; DNS WireGuard/AmneziaWG берётся из `.conf`. Поведение семейства без адреса/маршрута/DNS описано в [Android VpnService.Builder](https://developer.android.com/reference/android/net/VpnService.Builder#allowFamily(int)).
 
 Android 8.0+ / API 26+, сборки ARMv7, ARM64 и x86_64. На узком экране карточки расположены вертикально; ориентация телефона не фиксируется. На широком экране используются две колонки, на ТВ поддерживается пульт.
 

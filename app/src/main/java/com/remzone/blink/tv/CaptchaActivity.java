@@ -26,14 +26,13 @@ import javax.net.ssl.HttpsURLConnection;
 public final class CaptchaActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());private String id="",url="",image="";private TextView message;private LinearLayout root;private boolean opening;
     @Override public void onCreate(Bundle state){super.onCreate(state);if(DeviceLayout.isTV(this))getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        ScrollView scroll=new ScrollView(this);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);int pad=(int)(24*getResources().getDisplayMetrics().density);root.setPadding(pad,pad,pad,pad);scroll.addView(root);setContentView(scroll);
-        message=new TextView(this);message.setTextColor(Color.WHITE);message.setTextSize(20);root.addView(message);
+        LinearLayout page=BlinkStyle.page(this,"BLINK  /  Проверка VK","Ручная проверка · соединение продолжится после подтверждения");root=BlinkStyle.card(this,page,"Авторизация VK");message=BlinkStyle.text(this,"",18,BlinkStyle.TEXT);root.addView(message);
         JSONObject challenge=TunnelService.captcha();id=challenge.optString("id");url=challenge.optString("url");image=challenge.optString("image");if(id.isEmpty()){message.setText("Проверка уже закрыта. Вернитесь и подключитесь заново.");button("Назад",this::finish);return;}
         message.setText("Ручная проверка VK\nВо время проверки используется обычная сеть. После успешной проверки Blink продолжит подключение.");
         if(!url.isEmpty()){button("Открыть проверку VK",this::openSDK);main.post(this::openSDK);}else legacyImage();
         button("Отменить подключение",this::cancel);main.postDelayed(expiry,1000);
     }
-    private void button(String text,Runnable action){Button b=new Button(this);b.setText(text);b.setAllCaps(false);b.setTextColor(Color.WHITE);android.graphics.drawable.StateListDrawable background=new android.graphics.drawable.StateListDrawable();android.graphics.drawable.GradientDrawable focus=new android.graphics.drawable.GradientDrawable();focus.setColor(0xff286861);focus.setStroke(3,0xff91f2dc);android.graphics.drawable.GradientDrawable normal=new android.graphics.drawable.GradientDrawable();normal.setColor(0xff25394e);background.addState(new int[]{android.R.attr.state_focused},focus);background.addState(new int[]{},normal);b.setBackground(background);b.setMinHeight((int)(48*getResources().getDisplayMetrics().density));root.addView(b,new LinearLayout.LayoutParams(-1,-2));b.setOnClickListener(v->action.run());}
+    private void button(String text,Runnable action){BlinkStyle.button(this,root,text,action);}
     private void openSDK(){if(opening||isFinishing())return;try{String origin=CaptchaPolicy.origin(url);opening=true;VKCaptcha.INSTANCE.openCaptcha(origin,url,result->runOnUiThread(()->{
             opening=false;if(isDestroyed())return;
             if(result instanceof VKCaptchaResult.Success){VKCaptchaResult.Success success=(VKCaptchaResult.Success)result;if(origin.equals(success.getDomain())&&TunnelService.answerCaptcha(id,"token",success.getToken())){finish();return;}message.setText("Проверка устарела. Подключитесь заново.");}

@@ -1,72 +1,83 @@
-# Обычные VPN-профили · 0.4.0
+# Протоколы и форматы · 0.5.0
 
-Обычный VPN работает напрямую с выбранным сервером, без VK, TURN и CAPTCHA.
-Это самостоятельные профили: scoped JSON-подписка Vokop остаётся отдельным форматом.
+Сверка выполнена по `internal/database/model/model.go`, генераторам
+`internal/sub/service.go`, `json_service.go` и `clash_service.go`.
+Android и iOS используют одно native-ядро с проверяемым зеркалом исходников.
+Это список реализованных путей, а не утверждение, что все серверные сочетания
+проверены на устройствах. iOS в этой работе **не собирался**.
 
-## Реализованный импорт
-
-| Семейство | Формат | Возможности и границы |
+| Тип панели | Путь в Blink | Экспорт/импорт |
 | --- | --- | --- |
-| Xray VLESS | `vless://` | TCP/raw, WS, gRPC, HTTPUpgrade, базовый XHTTP, KCP; TLS и REALITY при допустимых сочетаниях |
-| Xray VMess | `vmess://` | URI и legacy base64 JSON с `aid=0` (AEAD); поддерживаемые транспорты Xray |
-| Xray Trojan | `trojan://` | TLS по умолчанию; параметры транспорта из URI |
-| Xray Shadowsocks | `ss://` | SIP002 и legacy base64; методы, поддержанные закреплённым Xray, включая SS2022; без плагинов |
-| Xray SOCKS5 | `socks://` | С авторизацией или без неё |
-| Xray Hysteria2 | `hy2://`, `hysteria2://` | Hysteria версии 2; TLS, поддержанные URI-параметры obfs/портов |
-| WireGuard | `[Interface]` / `[Peer]` `.conf` | Ключи, адреса, DNS IP, AllowedIPs, Endpoint, MTU, keepalive; до 16 peers |
-| AmneziaWG | `.conf` | Тот же формат и параметры AWG v3: Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5 |
+| VLESS | Xray | URI, plain/base64 feed, Xray JSON; TLS/REALITY, Vision и VLESS encryption проверяет закреплённое ядро |
+| VMess | Xray AEAD | URI, base64 JSON URI, JSON feed; alterId > 0 не поддерживается |
+| Trojan | Xray | URI/JSON; удалённый из текущего Xray Trojan flow отклоняется |
+| Shadowsocks / SS2022 | Xray | SIP002, legacy base64, JSON; внешние plugins требуют отдельной реализации |
+| HTTP | Xray HTTP CONNECT | Ручной URI/JSON; отдельную share-ссылку панель не генерирует |
+| Mixed (SOCKS/HTTP) | Xray SOCKS5 или HTTP CONNECT | Соответствующий клиентский протокол, не отдельный wire protocol |
+| Hysteria | Xray Hysteria2 | `hy2://` / `hysteria2://`, JSON; действующая схема панели принудительно выбирает version2 |
+| WireGuard | официальный WG-совместимый AWG backend; Xray WG для JSON | `wireguard://`, `.conf`, JSON |
+| AmneziaWG | официальный AWG v3 backend | `vpn://` с plain INI в base64url, `.conf`, узлы Clash |
+| TUIC v5 | официальный sing-quic | `tuic://`, узлы Clash; CC и UDP native/quic |
+| MASQUE | Xray CONNECT-IP | Xray JSON; панель не генерирует универсальный MASQUE URI |
+| MTProto | Telegram-specific proxy | Не является общесистемным VPN; ссылки предназначены Telegram, TUN-профиль из них не создаётся |
+| Tunnel / Dokodemo-door | Серверная переадресация | Не отдельный клиентский VPN-протокол; используется транспорт целевого сервиса |
 
-Проверка Xray при импорте отклоняет недопустимые сочетания. Наличие протокола в
-таблице не означает, что каждое сочетание транспорта и сервера испытано в сети.
-Это определённый набор форматов, а не полная совместимость со всеми опциями Happ.
+Дополнительно есть legacy Hysteria v1 через sing-quic для ручных импортов; это
+не означает поддержку version1 действующим Xray-сервером панели.
+OpenVPN, Cisco AnyConnect и Forti не добавлялись.
 
-Не импортируются произвольные полные Xray JSON, Clash YAML, `vpn://` backup Amnezia,
-TUIC, OpenVPN, Cisco AnyConnect или Forti. Не поддержаны расширенные XHTTP `extra`,
-`fm`, Shadowsocks plugins и legacy VMess alterId > 0. Неизвестные, повторяющиеся
-или неприменимые параметры отклоняются; отключение проверки TLS не разрешено.
-Сценарии WG PostUp/PreDown и прочие shell-команды не выполняются.
+## Настройки и форматы
 
-## Импорт и обновление
+- TCP/raw, WS, gRPC, HTTPUpgrade, XHTTP, KCP — при допустимых сочетаниях Xray.
+  XDRIVE передаётся через JSON, поскольку его URI панель не экспортирует.
+- JSON сохраняет streamSettings, encryption/flow, mux, routing, DNS,
+  observatory/balancers, policy и geodata. Desktop listeners удаляются;
+  sniffing, inbound tag и userLevel переносятся в публичный packet/TUN context.
+  Логи отключены; API/reverse, внешние файлы и platform-specific socket overrides
+  не применяются. Недопустимый конфиг отклоняется.
+- URI сохраняют TLS SNI/fingerprint/ALPN, REALITY pbk/sid/pqv, XHTTP extra,
+  FinalMask fm, cipher suites. KCP seed/header преобразуются в актуальный
+  mkcp-legacy FinalMask. Legacy alias `x_padding_bytes` согласуется с extra.
+- AWG сохраняет J/S/H/I параметры, HeaderProtectionKey, padding/timing ranges,
+  RandomTrailers, DisableCookies и keepalive range. Base64 header key из панели
+  преобразуется в hex для UAPI. IPv6 AllowedIPs без IPv6 Address не создаёт
+  фиктивный интерфейс IPv6; применяется только настроенное семейство.
+- Xray JSON принимается одиночным объектом или массивом именованных конфигов.
+  Страна/название каждого узла сохраняется отдельно. Plain/base64 URI feed и
+  scoped Vokop JSON остаются отдельными форматами.
+- Clash/Mihomo YAML импортирует **узлы** поддержанного набора параметров.
+  Группы/правила/DNS Clash не эмулируются; клиент явно показывает это уведомление.
+  Для сохранения маршрутизации экспортируйте Xray JSON. YAML aliases и дубли
+  ключей отклоняются; неподдержанные узлы учитываются в результате импорта.
+- Лимиты обычной подписки: 1 МиБ, до1024 узлов, зашифрованное хранилище до4 МиБ.
+  Поиск страны/названия и независимое обновление feeds не объединяют разные узлы.
 
-Кнопка «VPN-профили: Xray / WireGuard / AmneziaWG» открывает менеджер. Можно вставить
-URI, HTTPS-ссылку обычной подписки, содержимое `.conf` или открыть текстовый файл.
-Подписка — plain/base64 список URI. Если в прошивке ТВ нет файлового менеджера,
-доступны вставка текста и HTTPS. QR/камеры и генератора серверных конфигураций нет.
+Не все произвольные параметры всех сторонних клиентов взаимозаменяемы.
+Например, Hysteria leaf `pinSHA256` не подменяется Xray `pcs`, а отключение
+TLS-проверки не включается молча. Такие ссылки отклоняются; используйте корректный
+JSON с семантикой выбранного ядра. Полная совместимость со всеми опциями Happ
+не заявляется.
 
-Каждая HTTPS-подписка обновляется отдельно: заменяются только её узлы, ручные
-профили и другие подписки сохраняются. Выбранный профиль сохраняется, если его
-исходная конфигурация осталась в обновлении. При активном VPN изменение профилей
-на Android блокируется: сначала отключите соединение. Обновление вручную,
-фоновой синхронизации и автоматического выбора узла нет.
+## Проверяемый контракт
 
-Лимиты: ответ/файл 128 КиБ, до 256 профилей, зашифрованное хранилище до 512 КиБ.
-HTTPS проверяет сертификат; редиректы, cookies, URL userinfo и fragment запрещены.
-Поддержанные строки сохраняются, отклонённые показываются по номерам без ключей.
-Ссылки подписок и полные конфигурации содержат секреты и хранятся в AES-GCM vault
-AndroidKeyStore; signature provider лаунчера их не выдаёт.
+`TestMobileClientExportContract` создаёт детерминированные синтетические ссылки
+реальными экспортёрами панели. Их fixture хранится в обоих клиентах и проверяется
+общим native parser: VLESS TLS/REALITY/Vision/XHTTP, VMess, Trojan, SS/SS2022,
+Hysteria2, WG, AWG3.1, TUIC и MASQUE JSON. Это тест форматов, не live acceptance.
 
-## Маршруты, DNS и состояние
+Обновление fixture при изменении экспортёров (из корня панели):
 
-Xray/VK используют IPv4, MTU 1280 и сохраняют прямой доступ к частным LAN.
-DNS-пакеты на порт 53 перенаправляются в Xray DNS outbound: запрос к резолверу
-идёт **по TCP внутри выбранного прокси**, AAAA возвращается пустым. Прямого
-резервного DNS/freedom выхода нет. Адрес самого VPN-сервера разрешается до установки
-TUN в обычной сети. DoH/DoT приложений этим правилом не переписываются.
+```sh
+BLINK_MOBILE_CONTRACT_OUTPUT=/path/to/blink-android/native/mobile/testdata/panel-exports.json \
+  go test -run '^TestMobileClientExportContract$' ./internal/sub
+# В Android: (cd native && go test -race ./...)
+# В iOS: python3 tools/sync-native.py && python3 tools/sync-native.py --check
+```
 
-WireGuard/AmneziaWG используют Address, AllowedIPs, DNS и MTU из `.conf`, включая
-явно настроенный IPv6. Для default IPv4-маршрута остаётся прямым только фактический
-Wi-Fi/Ethernet LAN, loopback/link-local и multicast; остальные частные сети могут
-маршрутизироваться к VPN-peer. Явные split routes сохраняются. DNS должен входить
-в AllowedIPs и иметь соответствующее семейство Address. Если DNS не задан,
-1.1.1.1 допустим только при наличии маршрута к нему. MTU: 1280–9000; Jc ≤ 128,
-размеры Jmin/Jmax/S1–S4 ≤ 1280 для ограниченного мобильного пакетного backend.
-Эти ограничения намеренно строже некоторых настольных конфигураций AWG.
+В fixture нет живых UUID/паролей/подписок. Не подставляйте туда действующие данные.
+`tools/mobile-fixture.py` создаёт отдельный временный приватный TLS-профиль для
+проверки разрешённого сервера. Он не меняет базу панели. Запуск Xray ограничивайте
+RuntimeMaxSec и после проверки останавливайте unit/удаляйте конфигурацию.
 
-UDP-сокеты WG/AWG защищаются `VpnService.protect` до отправки; отказ защиты
-останавливает запуск. Фоновый сервис и пакетные очереди ограничены. Статус
-«готово» обычного профиля означает настройку локального VPN, **не подтверждение
-удалённого handshake или интернета**. Выполните встроенный HTTPS probe. Автоматическое
-переподключение при смене физической сети, on-demand, kill switch и миграция между
-узлами не заявлены: после смены Wi-Fi/Ethernet переподключите профиль вручную.
-
-См. [проверки](validation.md) и [зависимости/лицензии](provenance.md).
+Проверки устройств и ограничения: [Android](validation.md),
+[iOS source status](https://github.com/remzone/blink_ios/blob/main/docs/XRAY-MOBILE.md).

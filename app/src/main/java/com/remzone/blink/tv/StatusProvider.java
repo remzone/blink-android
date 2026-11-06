@@ -17,10 +17,10 @@ public final class StatusProvider extends ContentProvider {
     @Override public boolean onCreate(){return true;}
     @Override public Cursor query(Uri uri,String[] projection,String selection,String[] args,String sort){
         enforce();MatrixCursor c=new MatrixCursor(new String[]{"state","label","detail","mode","profile","expiresAt","revision","tx","rx","probe","rtt","egress","pendingCaptcha"});
-        String name="Подписка не добавлена";long expiry=0,revision=0;
-        try{JSONObject saved=new SecureStore(getContext()).load();StateStore.mode=saved.optString("mode","vk");JSONObject doc=new JSONObject(saved.getString("document"));expiry=doc.getLong("expires_at");revision=doc.getLong("revision");org.json.JSONArray profiles=doc.getJSONArray("profiles");int selected=Math.min(saved.optInt("selected",0),profiles.length()-1);name=profiles.getJSONObject(Math.max(0,selected)).getString("name");}catch(Exception ignored){ }
-        if("profile".equals(StateStore.mode)){try{JSONObject p=ProfilesStore.selected(new SecureStore(getContext()).load());name=p.optString("name","VPN");expiry=0;revision=0;}catch(Exception ignored){name="Выберите VPN-профиль";}}
-        c.addRow(new Object[]{StateStore.state,StateStore.label(),StateStore.detail,StateStore.mode,name,expiry,revision,StateStore.tx,StateStore.rx,StateStore.probe,StateStore.rtt,StateStore.egress,TunnelService.hasPendingCaptcha()?1:0});
+        String name="Подписка не добавлена",mode=StateStore.mode;long expiry=0,revision=0;
+        try{JSONObject saved=new SecureStore(getContext()).load();if(!StateStore.active())mode=saved.optString("mode","vk");JSONObject doc=new JSONObject(saved.getString("document"));expiry=doc.getLong("expires_at");revision=doc.getLong("revision");org.json.JSONArray profiles=doc.getJSONArray("profiles");int selected=Math.min(saved.optInt("selected",0),profiles.length()-1);name=profiles.getJSONObject(Math.max(0,selected)).getString("name");}catch(Exception ignored){ }
+        if("profile".equals(mode)){expiry=0;revision=0;try{JSONObject p=ProfilesStore.selected(new SecureStore(getContext()).load());name=p.optString("name","VPN");expiry=0;revision=0;}catch(Exception ignored){name="Выберите VPN-профиль";}}
+        c.addRow(new Object[]{StateStore.state,StateStore.label(),StateStore.detail,mode,name,expiry,revision,StateStore.tx,StateStore.rx,StateStore.probe,StateStore.rtt,StateStore.egress,TunnelService.hasPendingCaptcha()?1:0});
         c.setNotificationUri(getContext().getContentResolver(),StateStore.URI);return c;
     }
     @Override public Bundle call(String method,String arg,Bundle extras){

@@ -21,6 +21,8 @@ import (
 
 func main() {
 	dnsTCP := flag.Bool("dns-tcp", false, "Send diagnostic DNS through TCP rather than UDP")
+	host := flag.String("host", "www.cloudflare.com", "HTTPS diagnostic host (no credentials)")
+	path := flag.String("path", "/cdn-cgi/trace", "HTTPS path")
 	flag.Parse()
 	roots := x509.NewCertPool()
 	files, _ := filepath.Glob("/system/etc/security/cacerts/*")
@@ -38,7 +40,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		start := time.Now()
 		r := map[string]any{"family": family, "dns_tcp": *dnsTCP}
-		ips, e := resolver.LookupIP(ctx, family, "www.cloudflare.com")
+		ips, e := resolver.LookupIP(ctx, family, *host)
 		r["dns_ms"] = time.Since(start).Milliseconds()
 		if e != nil || len(ips) == 0 {
 			r["error"] = "dns_failed"
@@ -46,9 +48,9 @@ func main() {
 			cancel()
 			continue
 		}
-		tr := &http.Transport{DisableKeepAlives: true, TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: "www.cloudflare.com"}, TLSHandshakeTimeout: 6 * time.Second, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		tr := &http.Transport{DisableKeepAlives: true, TLSClientConfig: &tls.Config{RootCAs: roots, ServerName: *host}, TLSHandshakeTimeout: 6 * time.Second, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			if family == "ip" {
-				return (&net.Dialer{Timeout: 6 * time.Second, Resolver: resolver}).DialContext(ctx, "tcp", "www.cloudflare.com:443")
+				return (&net.Dialer{Timeout: 6 * time.Second, Resolver: resolver}).DialContext(ctx, "tcp", net.JoinHostPort(*host, "443"))
 			}
 			return (&net.Dialer{Timeout: 6 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(ips[0].String(), "443"))
 		}}
@@ -62,7 +64,7 @@ func main() {
 				phase.Store("http")
 			}
 		}, GotFirstResponseByte: func() { firstByteMS.Store(time.Since(start).Milliseconds()) }}
-		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), "GET", "https://www.cloudflare.com/cdn-cgi/trace", nil)
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), "GET", "https://"+*host+*path, nil)
 		resp, e := (&http.Client{Transport: tr}).Do(req)
 		if e != nil {
 			r["error_phase"] = phase.Load()

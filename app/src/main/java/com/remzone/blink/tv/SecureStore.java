@@ -24,7 +24,8 @@ final class SecureStore {
         KeyGenerator gen=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");
         gen.init(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setKeySize(256).build());return gen.generateKey();
     }
-    synchronized JSONObject load()throws Exception{
+    JSONObject load()throws Exception{synchronized(SecureStore.class){return loadLocked();}}
+    private JSONObject loadLocked()throws Exception{
         String value=prefs.getString("sealed",null);if(value==null)return new JSONObject();
         try{
             JSONObject sealed=new JSONObject(value);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");
@@ -32,11 +33,14 @@ final class SecureStore {
             return new JSONObject(new String(cipher.doFinal(Base64.decode(sealed.getString("data"),Base64.NO_WRAP)),StandardCharsets.UTF_8));
         }catch(Exception ex){throw new Exception("Не удалось прочитать защищённую подписку. Импортируйте её заново.");}
     }
-    synchronized void save(JSONObject value)throws Exception{
+    void save(JSONObject value)throws Exception{synchronized(SecureStore.class){saveLocked(value);}}
+    private void saveLocked(JSONObject value)throws Exception{
         Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key());
         JSONObject sealed=new JSONObject().put("iv",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).put("data",Base64.encodeToString(cipher.doFinal(value.toString().getBytes(StandardCharsets.UTF_8)),Base64.NO_WRAP));
         if(!prefs.edit().putString("sealed",sealed.toString()).commit())throw new Exception("Не удалось сохранить подписку");
     }
-    synchronized void clear(){prefs.edit().clear().apply();}
+    interface Mutation{void apply(JSONObject current)throws Exception;}
+    JSONObject update(Mutation mutation)throws Exception{synchronized(SecureStore.class){JSONObject current=loadLocked();mutation.apply(current);saveLocked(current);return current;}}
+    void clear(){synchronized(SecureStore.class){prefs.edit().clear().apply();}}
     Subscription subscription()throws Exception{return Subscription.parse(load().getString("document"),System.currentTimeMillis()/1000,0);}
 }

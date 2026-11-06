@@ -38,6 +38,7 @@ public final class TunnelService extends VpnService {
     private volatile boolean running;private Thread packets;
     private JSONObject importedProfile;private String profileName="Blink";private volatile boolean establishing;
     private long unreadySince;private String lastNative="";
+    static boolean protectDiagnostic(java.net.Socket socket){TunnelService service=live;return service==null||service.protect(socket);}
     @Override public void onCreate(){super.onCreate();live=this;NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("tunnel","VPN-соединение",NotificationManager.IMPORTANCE_LOW));}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent!=null&&STOP.equals(intent.getAction())){control.execute(()->finishTunnel("stopped","Туннель отключён"));return START_NOT_STICKY;}
