@@ -27,6 +27,7 @@ type Config struct {
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
 	// It is not a tunnel DNS server; all queries are socket-protected.
 	DNSServer     string
+	Bootstrap     string
 	TURNTransport string
 	ManualCaptcha bool
 	Direct        bool
@@ -90,10 +91,24 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	if net.ParseIP(cfg.DNSServer) == nil || cfg.Streams < 1 || cfg.Streams > 16 || cfg.PeerPort < 1 || cfg.PeerPort > 65535 || !validHost(cfg.PeerHost) {
 		return nil, errors.New("invalid transport configuration")
 	}
+	var bootstrap turnBootstrap
+	if cfg.Bootstrap != "" {
+		var e error
+		bootstrap, e = validateBootstrap(cfg.Bootstrap, cfg)
+		if e != nil {
+			return nil, e
+		}
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	nctx, ncancel := context.WithCancel(ctx)
 	c := &Client{ctx: ctx, cancel: cancel, networkCtx: nctx, networkCancel: ncancel, config: cfg, link: strings.TrimPrefix(u.Path, "/call/join/"), done: make(chan struct{}), events: make(chan string, 1), authGate: make(chan struct{}, 1), state: "connecting"}
 	c.authGate <- struct{}{}
+	if cfg.Bootstrap != "" {
+		c.username = bootstrap.Username
+		c.password = bootstrap.Password
+		c.turnAddress = bootstrap.Address
+		c.credsUntil = time.Unix(bootstrap.ExpiresAt, 0)
+	}
 	control := func(_, _ string, raw syscall.RawConn) error {
 		allowed := false
 		if err := raw.Control(func(fd uintptr) { allowed = protect(fd) }); err != nil {
@@ -232,7 +247,9 @@ func (c *Client) run() {
 	c.networkCancel()
 	c.wg.Wait()
 	// Clear cached secrets once workers can no longer access them.
+	<-c.authGate
 	c.username, c.password, c.turnAddress = "", "", ""
+	c.authGate <- struct{}{}
 	c.setState("stopped")
 	close(c.events)
 }

@@ -10,3 +10,23 @@ Android-сборке Xray/anet требуется `-checklinkname=0` при Go >
 ## Ручная проверка VK
 
 Используется официальный `com.vk.id.captcha:vkid-captcha:0.0.16` из репозитория VK `https://nexus-external.vkteam.ru/repository/maven/` (MIT согласно POM), Kotlin stdlib 1.9.24 и AndroidX Core 1.13.1 (его требует экран SDK; POM SDK зависимость не объявляет). Способ получения success_token и повторения запроса сверялся с официальным [Error14HandlingInterceptor](https://github.com/VKCOM/vkid-android-sdk/blob/7a18bdc301fb95b94d7968f49cdaf68d8b884414/sdk/core/network/src/main/kotlin/com/vk/id/network/http/captcha/Error14HandlingInterceptor.kt). В SDK Blink не копируются автоматические решатели upstream. Механизм сохранения запроса, срок, привязка результата и UI пульта реализованы в этом репозитории.
+
+## Обычные VPN · 0.4.0
+
+- Xray-core закреплён на `0afec66085a85191e9dd2a4a6646c7c9a94688d1`
+  (`native/go.mod`), MPL-2.0; официальные [документы](https://xtls.github.io/).
+- WG и AmneziaWG используют официальный MIT backend
+  [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go),
+  v3.1.20260828, commit `b5928efb6ca19f0153958460c3d141f04abc5c2e`.
+  Пакетный адаптер и защищённый mobile bind написаны в `native/mobile/wg_backend.go`.
+  Официальный `wireguard-go` применяется как независимый peer в тесте обычного WG.
+- URI-парсер в `native/share` адаптирован из MIT
+  [XTLS/libXray](https://github.com/XTLS/libXray),
+  commit `7fe8528063e54343af8ba9a37431afc56000de21`.
+  Сохранён `native/share/LICENSE`; GPL wrappers добавляют строгую валидацию,
+  лимиты, legacy VMess/SS import и ошибки без реквизитов.
+- Зеркало ядра для iOS: `blink_ios/Native`, замена только module import prefix.
+  `blink_ios/tools/sync-native.py --check` проверяет отсутствие расхождений.
+
+Все версии транзитивных зависимостей закреплены в go.mod/go.sum. Новые MIT
+компоненты не меняют GPL-лицензию интеграции и условия других зависимостей.

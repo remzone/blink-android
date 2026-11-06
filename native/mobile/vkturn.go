@@ -15,6 +15,7 @@ import (
 )
 
 type VKProfile struct {
+	Bootstrap     string `json:"bootstrap,omitempty"`
 	TURNTransport string `json:"turnTransport"`
 	DNSServer     string `json:"dnsServer"`
 	ManualCaptcha bool   `json:"manualCaptcha"`
@@ -49,7 +50,7 @@ func StartVK(profileJSON string, sink PacketWriter, protector Protector) (*Engin
 	if !validUUID(p.UUID) || p.ExpiresAt <= now || p.ExpiresAt > now+2678400 {
 		return nil, errors.New("invalid or expired subscription")
 	}
-	transport, err := vkturn.Start(context.Background(), vkturn.Config{PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
+	transport, err := vkturn.Start(context.Background(), vkturn.Config{Bootstrap: p.Bootstrap, PeerHost: p.PeerHost, PeerPort: p.PeerPort, VKCallURL: p.VKCallURL, Streams: p.Streams, DNSServer: p.DNSServer, Direct: p.Mode == "direct", ManualCaptcha: p.ManualCaptcha, TURNTransport: p.TURNTransport}, func(fd uintptr) bool { return protector.Protect(int64(fd)) })
 	if err != nil {
 		return nil, errors.New("VK transport initialization failed")
 	}
@@ -104,4 +105,15 @@ func (e *Engine) SubmitCaptcha(id, kind, value string) bool {
 		return false
 	}
 	return e.vkTransport.SubmitCaptcha(id, kind, value)
+}
+
+// ExportVKBootstrap is secret, memory-only data for an iOS app->extension handoff.
+// It expires within 90 seconds and must only enter shared Keychain, never logs.
+func (e *Engine) ExportVKBootstrap() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.vkTransport == nil {
+		return ""
+	}
+	return e.vkTransport.ExportBootstrap()
 }

@@ -50,10 +50,13 @@ type Engine struct {
 	vkTransport *vkturn.Client
 	expiry      *time.Timer
 	mu          sync.Mutex
-	stack       tun.Stack
-	adapter     *packetAdapter
-	instance    *core.Instance
-	cancel      context.CancelFunc
+	stack       interface {
+		Input([]byte)
+		Close() error
+	}
+	adapter  *packetAdapter
+	instance *core.Instance
+	cancel   context.CancelFunc
 }
 
 type packetAdapter struct {
@@ -122,6 +125,13 @@ func registerController() error {
 }
 
 func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine, error) {
+	raw, err := buildConfig(profileJSON)
+	if err != nil {
+		return nil, err
+	}
+	return startConfig(raw, sink, protector)
+}
+func startConfig(raw []byte, sink PacketWriter, protector Protector) (*Engine, error) {
 	lifecycle.Lock()
 	defer lifecycle.Unlock()
 	if active != nil {
@@ -130,7 +140,7 @@ func Start(profileJSON string, sink PacketWriter, protector Protector) (*Engine,
 	if sink == nil || protector == nil {
 		return nil, errors.New("packet writer and protector required")
 	}
-	raw, err := buildConfig(profileJSON)
+	raw, err := withProxyDNS(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +237,9 @@ func (e *Engine) Stop() {
 	e.cancel()
 	_ = stack.Close()
 	_ = e.adapter.Close()
-	_ = e.instance.Close()
+	if e.instance != nil {
+		_ = e.instance.Close()
+	}
 	if transport != nil {
 		_ = transport.Close()
 	}

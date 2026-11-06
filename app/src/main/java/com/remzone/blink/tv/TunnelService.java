@@ -36,7 +36,7 @@ public final class TunnelService extends VpnService {
     private final Object outputLock=new Object();
     private volatile Engine engine;private volatile ParcelFileDescriptor tun;
     private volatile boolean running;private Thread packets;
-    private String profileName="Blink";private volatile boolean establishing;
+    private JSONObject importedProfile;private String profileName="Blink";private volatile boolean establishing;
     private long unreadySince;private String lastNative="";
     @Override public void onCreate(){super.onCreate();live=this;NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("tunnel","VPN-соединение",NotificationManager.IMPORTANCE_LOW));}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -53,30 +53,48 @@ public final class TunnelService extends VpnService {
         try{
             if(VpnService.prepare(this)!=null)throw new Exception("Подтвердите разрешение VPN в сетевых настройках");
             JSONObject saved=new SecureStore(this).load();
-            Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
-            int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
-            String mode=saved.optString("mode","vk");if(!mode.equals("vk")&&!mode.equals("direct"))throw new Exception("Выберите режим туннеля");
-            StateStore.mode=mode;StateStore.turnTransport=saved.optString("turnTransport","tcp");StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";
-            StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
-            engine=Mobile.startVK(s.profiles.get(selected).nativeJSON(mode,"1.1.1.1",s.expiresAt,saved.optString("turnTransport","tcp")),this::writePacket,fd->protect((int)fd));
-            profileName=s.profiles.get(selected).name;
+            String mode=saved.optString("mode","vk");
+            StateStore.mode=mode;StateStore.turnTransport=saved.optString("turnTransport","tcp");StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
+            if("profile".equals(mode)){
+                importedProfile=new JSONObject(Mobile.importProfile(ProfilesStore.selected(saved).getString("source")));
+                profileName=importedProfile.getString("name");StateStore.set(this,"connecting","Подготовка обычного VPN-профиля…");
+                engine=Mobile.startProfile(importedProfile.toString(),this::writePacket,fd->protect((int)fd));
+            }else{
+                if(!mode.equals("vk")&&!mode.equals("direct"))throw new Exception("Выберите режим туннеля");
+                Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
+                int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
+                StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
+                engine=Mobile.startVK(s.profiles.get(selected).nativeJSON(mode,"1.1.1.1",s.expiresAt,saved.optString("turnTransport","tcp")),this::writePacket,fd->protect((int)fd));
+                profileName=s.profiles.get(selected).name;
+            }
             running=true;unreadySince=android.os.SystemClock.elapsedRealtime();lastNative="";main.post(monitor);
         }catch(Exception ex){finishTunnel("error",safeError(ex));}
     }
     // Keep ordinary networking until authentication and the transport are ready.
     private void establishTun(){
-        try{if(!running||engine==null||tun!=null||!"ready".equals(engine.status()))return;
-            Builder b=new Builder().setSession("Blink · "+profileName).setMtu(1280).addAddress("10.77.0.2",32).addDnsServer("1.1.1.1").setBlocking(false).setConfigureIntent(PendingIntent.getActivity(this,0,new Intent(this,NetworkActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
-            for(String route:RoutePolicy.ipv4()){String[] parts=route.split("/");b.addRoute(parts[0],Integer.parseInt(parts[1]));}
-            // The current server has no verified IPv6 egress. Do not advertise IPv6:
-            // Android blocks a family without an address, DNS, route or allowFamily.
-            // Enabling it made AAAA destinations stall at TLS instead of failing fast.
+        try{if(!running||engine==null||tun!=null||!("ready".equals(engine.status())||"profile".equals(StateStore.mode)&&"running".equals(engine.status())))return;
+            Builder b=new Builder().setSession("Blink · "+profileName).setMtu(importedProfile==null?1280:importedProfile.getInt("mtu")).setBlocking(false).setConfigureIntent(PendingIntent.getActivity(this,0,new Intent(this,NetworkActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
+            if(importedProfile==null||"xray".equals(importedProfile.optString("kind"))){
+                b.addAddress("10.77.0.2",32).addDnsServer("1.1.1.1");for(String route:RoutePolicy.ipv4())addRoute(b,route);
+            }else{
+                org.json.JSONArray addresses=importedProfile.getJSONArray("addresses"),dns=importedProfile.getJSONArray("dns"),routes=importedProfile.getJSONArray("routes");
+                for(int i=0;i<addresses.length();i++){String[] a=addresses.getString(i).split("/");b.addAddress(a[0],Integer.parseInt(a[1]));}
+                for(int i=0;i<routes.length();i++){String route=routes.getString(i);if("0.0.0.0/0".equals(route)){for(String r:RoutePolicy.wireGuardDefault(localNetworks()))addRoute(b,r);}else addRoute(b,route);}
+                for(int i=0;i<dns.length();i++){String address=dns.getString(i);b.addDnsServer(address);b.addRoute(address,address.contains(":")?128:32);}
+            }
+            // Xray/VK stay IPv4-only. Explicit WG .conf addresses/routes control its families.
             tun=b.establish();if(tun==null)throw new Exception("Система не разрешила создать VPN-интерфейс");
             ConnectivityManager cm=getSystemService(ConnectivityManager.class);
             for(Network n:cm.getAllNetworks()){NetworkCapabilities caps=cm.getNetworkCapabilities(n);if(caps!=null&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)){setUnderlyingNetworks(new Network[]{n});break;}}
             packets=new Thread(this::readPackets,"Blink-TUN");packets.start();
         }catch(Exception ex){finishTunnel("error",safeError(ex));}finally{establishing=false;}
     }
+    private java.util.List<String> localNetworks(){
+        java.util.List<String> result=new java.util.ArrayList<>();ConnectivityManager cm=getSystemService(ConnectivityManager.class);
+        for(Network network:cm.getAllNetworks()){NetworkCapabilities caps=cm.getNetworkCapabilities(network);if(caps==null||caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)||!(caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)||caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)))continue;android.net.LinkProperties links=cm.getLinkProperties(network);if(links!=null)for(android.net.LinkAddress a:links.getLinkAddresses())if(a.getAddress() instanceof java.net.Inet4Address)result.add(a.getAddress().getHostAddress()+"/"+a.getPrefixLength());}
+        return result;
+    }
+    private static void addRoute(Builder b,String route){String[] p=route.split("/");b.addRoute(p[0],Integer.parseInt(p[1]));}
     private void closeTun(){
         ParcelFileDescriptor old; synchronized(outputLock){old=tun;tun=null;}
         if(old!=null)try{old.close();}catch(Exception ignored){}
@@ -101,7 +119,7 @@ public final class TunnelService extends VpnService {
     private final Runnable monitor=new Runnable(){@Override public void run(){
         Engine current=engine;if(!running||current==null)return;
         try{
-            String state=current.status();JSONObject counters=new JSONObject(current.statsJSON());StateStore.tx=counters.optLong("tx");StateStore.rx=counters.optLong("rx");
+            String state=current.status();if("profile".equals(StateStore.mode)&&"running".equals(state))state="ready";JSONObject counters=new JSONObject(current.statsJSON());StateStore.tx=counters.optLong("tx");StateStore.rx=counters.optLong("rx");
             if("captcha_required".equals(state)){
                 if(!hasPendingCaptcha()){control.execute(()->finishTunnel("captcha_required","VK не выдал доступную проверку или её время истекло. Подключитесь заново."));return;}
                 if(tun!=null)control.execute(TunnelService.this::closeTun);
@@ -113,7 +131,7 @@ public final class TunnelService extends VpnService {
             if("stopped".equals(state)){control.execute(()->finishTunnel("error","Срок подписки закончился или ядро остановлено. Обновите подписку."));return;}
             if("ready".equals(state))unreadySince=0;else if(unreadySince==0)unreadySince=android.os.SystemClock.elapsedRealtime();
             if(!state.equals(lastNative)){
-                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("vk".equals(StateStore.mode)?"VK TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры VK."):"Восстановление соединения…");
+                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("profile".equals(StateStore.mode)?"Настройки VPN применены. Проверьте интернет; это не подтверждение удалённого соединения.":"vk".equals(StateStore.mode)?"VK TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры VK."):"Восстановление соединения…");
                 getSystemService(NotificationManager.class).notify(17,notification(StateStore.label()));
             }else StateStore.notifyChanged(TunnelService.this);
             if(!"ready".equals(state)&&unreadySince>0&&android.os.SystemClock.elapsedRealtime()-unreadySince>45000){control.execute(()->finishTunnel("error","Сервер не ответил за 45 секунд. Обычная сеть восстановлена."));return;}

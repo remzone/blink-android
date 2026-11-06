@@ -8,7 +8,14 @@ import javax.net.ssl.HttpsURLConnection;
 
 final class SubscriptionHTTP {
     static String fetch(String url)throws Exception{
-        Subscription.validateURL(url);
+        Subscription.validateURL(url);return fetchHTTPS(url);
+    }
+    static String fetchStandard(String raw)throws Exception{
+        java.net.URI u=new java.net.URI(raw);
+        if(raw.length()>2048||!"https".equals(u.getScheme())||u.getHost()==null||u.getUserInfo()!=null||u.getFragment()!=null)throw new Exception("Нужна HTTPS-ссылка подписки");
+        return fetchHTTPS(raw);
+    }
+    private static String fetchHTTPS(String url)throws Exception{
         HttpsURLConnection c=(HttpsURLConnection)new URL(url).openConnection();
         c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setInstanceFollowRedirects(false);c.setUseCaches(false);
         c.setRequestProperty("Accept","application/json");c.setRequestProperty("Cache-Control","no-store");

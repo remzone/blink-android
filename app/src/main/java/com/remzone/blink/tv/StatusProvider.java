@@ -19,6 +19,7 @@ public final class StatusProvider extends ContentProvider {
         enforce();MatrixCursor c=new MatrixCursor(new String[]{"state","label","detail","mode","profile","expiresAt","revision","tx","rx","probe","rtt","egress","pendingCaptcha"});
         String name="Подписка не добавлена";long expiry=0,revision=0;
         try{JSONObject saved=new SecureStore(getContext()).load();StateStore.mode=saved.optString("mode","vk");JSONObject doc=new JSONObject(saved.getString("document"));expiry=doc.getLong("expires_at");revision=doc.getLong("revision");org.json.JSONArray profiles=doc.getJSONArray("profiles");int selected=Math.min(saved.optInt("selected",0),profiles.length()-1);name=profiles.getJSONObject(Math.max(0,selected)).getString("name");}catch(Exception ignored){ }
+        if("profile".equals(StateStore.mode)){try{JSONObject p=ProfilesStore.selected(new SecureStore(getContext()).load());name=p.optString("name","VPN");expiry=0;revision=0;}catch(Exception ignored){name="Выберите VPN-профиль";}}
         c.addRow(new Object[]{StateStore.state,StateStore.label(),StateStore.detail,StateStore.mode,name,expiry,revision,StateStore.tx,StateStore.rx,StateStore.probe,StateStore.rtt,StateStore.egress,TunnelService.hasPendingCaptcha()?1:0});
         c.setNotificationUri(getContext().getContentResolver(),StateStore.URI);return c;
     }
@@ -32,7 +33,7 @@ public final class StatusProvider extends ContentProvider {
         }else throw new IllegalArgumentException("Unsupported method");
         return out;
     }
-    private boolean hasValidSubscription(Context c){try{new SecureStore(c).subscription();return true;}catch(Exception e){return false;}}
+    private boolean hasValidSubscription(Context c){try{SecureStore s=new SecureStore(c);JSONObject saved=s.load();if("profile".equals(saved.optString("mode")))return ProfilesStore.valid(saved);s.subscription();return true;}catch(Exception e){return false;}}
     private void enforce(){getContext().enforceCallingOrSelfPermission(PERMISSION,"Launcher signature required");}
     @Override public String getType(Uri uri){return "vnd.android.cursor.item/vnd.blink.status";}
     @Override public Uri insert(Uri uri,ContentValues values){throw new UnsupportedOperationException();}
