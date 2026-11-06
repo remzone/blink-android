@@ -2,7 +2,7 @@
 
 Android VpnService создаёт TUN только после готовности транспорта; отдельный поток читает неблокирующий дескриптор через poll и передаёт IP-пакеты в gomobile Engine.Input. Go использует пакетный стек Xray, а выходящие пакеты возвращает в TUN. Внешние сокеты VK, DNS, TURN и direct UDP защищены VpnService.protect, иначе они попали бы обратно в VPN.
 
-За туннель направляются публичные IPv4 и IPv6; IPv4 LAN, loopback, link-local и multicast остаются локальными. DNS приложения отправляется через VPN. Bootstrap DNS ядра защищён от захвата VPN. VPN не требует root, always-on или отключения штатной сети.
+За туннель направляются публичные IPv4; IPv4 LAN, loopback, link-local и multicast остаются локальными. С версии 0.3.1 IPv6 не объявляется: у VPN нет IPv6-адреса, маршрутов или DNS; allowFamily(AF_INET6) и allowBypass не вызываются. Android блокирует IPv6 вместо пропуска мимо VPN. Ранее объявленный IPv6 воспроизводимо зависал на TLS на текущем стенде. DNS приложения отправляется через VPN. Bootstrap DNS ядра защищён от захвата VPN. VPN не требует root, always-on или отключения штатной сети.
 
 ## Транспорт и диагностика
 

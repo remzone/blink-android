@@ -66,9 +66,11 @@ public final class TunnelService extends VpnService {
     // Keep ordinary networking until authentication and the transport are ready.
     private void establishTun(){
         try{if(!running||engine==null||tun!=null||!"ready".equals(engine.status()))return;
-            Builder b=new Builder().setSession("Blink · "+profileName).setMtu(1280).addAddress("10.77.0.2",32).addAddress("fd77:6c69:6e6b::2",128).addDnsServer("1.1.1.1").addDnsServer("2606:4700:4700::1111").setBlocking(false).setConfigureIntent(PendingIntent.getActivity(this,0,new Intent(this,NetworkActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
+            Builder b=new Builder().setSession("Blink · "+profileName).setMtu(1280).addAddress("10.77.0.2",32).addDnsServer("1.1.1.1").setBlocking(false).setConfigureIntent(PendingIntent.getActivity(this,0,new Intent(this,NetworkActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
             for(String route:RoutePolicy.ipv4()){String[] parts=route.split("/");b.addRoute(parts[0],Integer.parseInt(parts[1]));}
-            b.addRoute("2000::",3);b.addRoute("64:ff9b::",96);
+            // The current server has no verified IPv6 egress. Do not advertise IPv6:
+            // Android blocks a family without an address, DNS, route or allowFamily.
+            // Enabling it made AAAA destinations stall at TLS instead of failing fast.
             tun=b.establish();if(tun==null)throw new Exception("Система не разрешила создать VPN-интерфейс");
             ConnectivityManager cm=getSystemService(ConnectivityManager.class);
             for(Network n:cm.getAllNetworks()){NetworkCapabilities caps=cm.getNetworkCapabilities(n);if(caps!=null&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)){setUnderlyingNetworks(new Network[]{n});break;}}
