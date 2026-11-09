@@ -12,12 +12,14 @@ final class Subscription {
     final long revision,issuedAt,expiresAt; final List<Profile> profiles;
     Subscription(long r,long i,long e,List<Profile> p){revision=r;issuedAt=i;expiresAt=e;profiles=p;}
     static final class Profile {
+        String backend="vless",protocol="kcp",wireguard="",wrapKey="";JSONObject options;
+        String backendTitle(){return "wireguard".equals(backend)?"WireGuard · "+protocol.toUpperCase(java.util.Locale.ROOT):"VLESS · KCP";}
         final String id,name,uuid,host,call;final int port,streams;
         Profile(String i,String n,String u,String h,int p,String c,int s){id=i;name=n;uuid=u;host=h;port=p;call=c;streams=s;}
         String nativeJSON(String mode,String dns,long expiry)throws Exception{return nativeJSON(mode,dns,expiry,"auto");}
         String nativeJSON(String mode,String dns,long expiry,String transport)throws Exception{
             if(!transport.equals("auto")&&!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите Авто, TCP или UDP для VK");
-            return new JSONObject().put("turnTransport",transport).put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
+            return new JSONObject().put("backend",backend).put("protocol",protocol).put("wireguard",wireguard).put("wrapKey",wrapKey).put("turnTransport",transport).put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
         }
     }
     static String transport(JSONObject saved){
@@ -32,7 +34,7 @@ final class Subscription {
     }
     static Subscription parse(String raw,long now,long minimumRevision)throws Exception{
         JsonGuard.validate(raw);JSONObject o=new JSONObject(raw);
-        if(!"vokop.subscription.v1".equals(str(o,"schema")))throw new Exception("Неподдерживаемый формат подписки");
+        if(!java.util.Arrays.asList("vokop.subscription.v1","vokop.subscription.v2").contains(str(o,"schema")))throw new Exception("Неподдерживаемый формат подписки");
         long r=integer(o,"revision"),i=integer(o,"issued_at"),e=integer(o,"expires_at");
         if(r<1||r<minimumRevision||i<0||i>now+300||e<=now||e<=i||e-i>2678400)throw new Exception("Подписка истекла, имеет неверный срок или устаревшую версию");
         Object list=o.get("profiles");if(!(list instanceof JSONArray))throw new Exception("Некорректный список профилей");JSONArray a=(JSONArray)list;
@@ -43,7 +45,12 @@ final class Subscription {
             String id=str(p,"id"),name=str(p,"name"),uuid=str(v,"uuid"),host=str(t,"peer_host"),call=str(t,"vk_call_url");
             long port=integer(t,"peer_port"),streams=integer(t,"streams");
             if(!id.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")||!ids.add(id)||name.codePointCount(0,name.length())>100||name.codePoints().anyMatch(Character::isISOControl)||!uuid.matches("[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}")||!validHost(host)||port<1||port>65535||streams<1||streams>16||call.length()>2048||!call.matches("https://(?:www\\.)?vk\\.(?:com|ru)/call/join/[A-Za-z0-9_=-]+"))throw new Exception("Некорректный профиль Vokop");
-            profiles.add(new Profile(id,name,uuid,host,(int)port,call,(int)streams));
+            Profile profile=new Profile(id,name,uuid,host,(int)port,call,(int)streams);
+            profile.backend=p.optString("backend","vless");profile.protocol=t.optString("protocol","kcp");profile.wireguard=p.optString("wireguard","");profile.wrapKey=t.optString("wrap_key","");profile.options=t.optJSONObject("options");
+            boolean wg="wireguard".equals(profile.backend);if(wg&&!"vokop.subscription.v2".equals(o.getString("schema")))throw new Exception("WG требует подписку v2");
+            if((!wg&&!"vless".equals(profile.backend))||(wg?!java.util.Arrays.asList("dtls","srtp","wrap").contains(profile.protocol)||profile.wireguard.isEmpty()||profile.wireguard.length()>16384:!"kcp".equals(profile.protocol)||!profile.wireguard.isEmpty())||("wrap".equals(profile.protocol)?!profile.wrapKey.matches("[a-fA-F0-9]{64}"):!profile.wrapKey.isEmpty()))throw new Exception("Несовместимые тип VPN и протокол сервера");
+            if(profile.options!=null&&!VKOptions.from(new JSONObject().put("vkOptions",profile.options)).valid())throw new Exception("Неверные настройки панели");
+            profiles.add(profile);
         }
         return new Subscription(r,i,e,profiles);
     }

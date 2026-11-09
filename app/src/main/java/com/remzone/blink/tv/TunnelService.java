@@ -66,6 +66,7 @@ public final class TunnelService extends VpnService {
                 Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
                 int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
                 StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
+                if("wireguard".equals(s.profiles.get(selected).backend))importedProfile=new JSONObject(Mobile.importProfile(s.profiles.get(selected).wireguard));
                 engine=Mobile.startVK(VKOptions.from(saved).nativeJSON(s.profiles.get(selected),mode,s.expiresAt),this::writePacket,fd->protect((int)fd));
                 profileName=s.profiles.get(selected).name;
             }

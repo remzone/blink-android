@@ -20,4 +20,10 @@ public class SubscriptionTest {
     @Test public void rejectsDuplicateAndEscapedDuplicateKeys()throws Exception{reject(feed().replace("\"revision\":4","\"revision\":4,\"revision\":5"),2000,0);reject(feed().replace("\"revision\":4","\"revision\":4,\"rev\\u0069sion\":5"),2000,0);}
     @Test public void rejectsLenientJsonExtensions()throws Exception{for(String input:new String[]{"{'a':1}","{\"a\":1,}","{\"a\":NaN}","{\"a\":/* comment */1}","{\"a\":1}{}","{\"a\":\"x\n\"}"}){try{JsonGuard.validate(input);fail(input);}catch(Exception expected){}}}
     @Test public void onlyDedicatedHttpsFeedUrls()throws Exception{String valid="https://panel.example.org/vokop-panel/api/vokop/v1/subscriptions/"+"x".repeat(43);assertEquals(valid,Subscription.validateURL(valid));for(String input:new String[]{valid.replace("https:","http:"),valid+"?key=x",valid+"#x",valid.replace("panel.example.org","user:pass@panel.example.org"),"https://panel.example.org/vokop-panel/panel/api/vokop/overview"}){try{Subscription.validateURL(input);fail(input);}catch(Exception expected){}}}
+ @Test public void wireGuardRequiresV2AndMatchingProtocol()throws Exception{
+ JSONObject doc=new JSONObject(feed()),p=doc.getJSONArray("profiles").getJSONObject(0),turn=p.getJSONObject("turn");p.put("backend","wireguard").put("wireguard","[Interface]\nPrivateKey = test\n");turn.put("protocol","srtp");reject(doc.toString(),2000,4);
+ doc.put("schema","vokop.subscription.v2");Subscription parsed=Subscription.parse(doc.toString(),2000,4);assertEquals("wireguard",parsed.profiles.get(0).backend);assertEquals("srtp",new JSONObject(parsed.profiles.get(0).nativeJSON("vk","1.1.1.1",5000)).getString("protocol"));
+ turn.put("protocol","kcp");reject(doc.toString(),2000,4);turn.put("protocol","wrap");reject(doc.toString(),2000,4);turn.put("wrap_key","1".repeat(64));Subscription.parse(doc.toString(),2000,4);
+ p.put("backend","vless");reject(doc.toString(),2000,4);
+ }
 }
