@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 final class Subscription {
+    JSONObject routing;
     final long revision,issuedAt,expiresAt; final List<Profile> profiles;
     Subscription(long r,long i,long e,List<Profile> p){revision=r;issuedAt=i;expiresAt=e;profiles=p;}
     static final class Profile {
@@ -34,9 +35,9 @@ final class Subscription {
     }
     static Subscription parse(String raw,long now,long minimumRevision)throws Exception{
         JsonGuard.validate(raw);JSONObject o=new JSONObject(raw);
-        if(!java.util.Arrays.asList("vokop.subscription.v1","vokop.subscription.v2").contains(str(o,"schema")))throw new Exception("Неподдерживаемый формат подписки");
+        if(!java.util.Arrays.asList("vokop.subscription.v1","vokop.subscription.v2","vokop.subscription.v3").contains(str(o,"schema")))throw new Exception("Неподдерживаемый формат подписки");
         long r=integer(o,"revision"),i=integer(o,"issued_at"),e=integer(o,"expires_at");
-        if(r<1||r<minimumRevision||i<0||i>now+300||e<=now||e<=i||e-i>2678400)throw new Exception("Подписка истекла, имеет неверный срок или устаревшую версию");
+        if(r<1||r<minimumRevision||i<0||i>now+300||e<=now||e<=i||e>253402300799L)throw new Exception("Подписка истекла, имеет неверный срок или устаревшую версию");
         Object list=o.get("profiles");if(!(list instanceof JSONArray))throw new Exception("Некорректный список профилей");JSONArray a=(JSONArray)list;
         if(a.length()<1||a.length()>16)throw new Exception("В подписке должно быть от 1 до 16 профилей");
         List<Profile> profiles=new ArrayList<>();Set<String> ids=new HashSet<>();
@@ -47,12 +48,14 @@ final class Subscription {
             if(!id.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")||!ids.add(id)||name.codePointCount(0,name.length())>100||name.codePoints().anyMatch(Character::isISOControl)||!uuid.matches("[a-fA-F0-9]{8}-(?:[a-fA-F0-9]{4}-){3}[a-fA-F0-9]{12}")||!validHost(host)||port<1||port>65535||streams<1||streams>16||call.length()>2048||!call.matches("https://(?:www\\.)?vk\\.(?:com|ru)/call/join/[A-Za-z0-9_=-]+"))throw new Exception("Некорректный профиль Vokop");
             Profile profile=new Profile(id,name,uuid,host,(int)port,call,(int)streams);
             profile.backend=p.optString("backend","vless");profile.protocol=t.optString("protocol","kcp");profile.wireguard=p.optString("wireguard","");profile.wrapKey=t.optString("wrap_key","");profile.options=t.optJSONObject("options");
-            boolean wg="wireguard".equals(profile.backend);if(wg&&!"vokop.subscription.v2".equals(o.getString("schema")))throw new Exception("WG требует подписку v2");
+            boolean wg="wireguard".equals(profile.backend);if(wg&&!java.util.Arrays.asList("vokop.subscription.v2","vokop.subscription.v3").contains(o.getString("schema")))throw new Exception("WG требует подписку v2");
             if((!wg&&!"vless".equals(profile.backend))||(wg?!java.util.Arrays.asList("dtls","srtp","wrap").contains(profile.protocol)||profile.wireguard.isEmpty()||profile.wireguard.length()>16384:!"kcp".equals(profile.protocol)||!profile.wireguard.isEmpty())||("wrap".equals(profile.protocol)?!profile.wrapKey.matches("[a-fA-F0-9]{64}"):!profile.wrapKey.isEmpty()))throw new Exception("Несовместимые тип VPN и протокол сервера");
             if(profile.options!=null&&!VKOptions.from(new JSONObject().put("vkOptions",profile.options)).valid())throw new Exception("Неверные настройки панели");
             profiles.add(profile);
         }
-        return new Subscription(r,i,e,profiles);
+        Subscription result=new Subscription(r,i,e,profiles);result.routing=o.optJSONObject("routing");
+        if("vokop.subscription.v3".equals(o.getString("schema"))&&(result.routing==null||!"blink.routing.v1".equals(result.routing.optString("schema"))||!"selected".equals(result.routing.optString("mode"))))throw new Exception("Нет правил маршрутизации");
+        return result;
     }
     private static String str(JSONObject o,String k)throws Exception{Object v=o.get(k);if(!(v instanceof String))throw new Exception("Неверный тип поля подписки");return (String)v;}
     private static long integer(JSONObject o,String k)throws Exception{Object v=o.get(k);if(!(v instanceof Number))throw new Exception("Неверный тип числа");double d=((Number)v).doubleValue();if(!Double.isFinite(d)||Math.rint(d)!=d||Math.abs(d)>9007199254740991d)throw new Exception("Некорректное число");return ((Number)v).longValue();}

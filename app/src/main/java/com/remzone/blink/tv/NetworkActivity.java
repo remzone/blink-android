@@ -37,7 +37,8 @@ public final class NetworkActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private SecureStore store;private JSONObject saved=new JSONObject();private Subscription subscription;
-    private boolean busy,updating,accountLoading;private long accountChecked;private JSONObject accountStatus;
+    private boolean busy,updating,accountLoading,statusLoading;private long statusRevision=-1,policyChecked;private boolean needsSubscriptionRefresh;
+    private TextView maintenanceBanner;private long accountChecked;private JSONObject accountStatus;
     private TextView paymentStatus,paymentBalance,paymentDate;
     private TextView status,detail,profile,expiry,revision,traffic,diagnostic,notice;
     private Button connect,refresh,select,probe,importLink,forgetLink,captcha,transport;private RadioButton vk,direct,ordinary;private RadioGroup modeGroup;
@@ -49,10 +50,11 @@ public final class NetworkActivity extends Activity {
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);handleIntent(intent);}
     private boolean trustedCaller(){String caller=getCallingPackage();return caller!=null&&getPackageManager().checkSignatures(getPackageName(),caller)==android.content.pm.PackageManager.SIGNATURE_MATCH;}
     private void handleIntent(Intent intent){CharSequence shared=Intent.ACTION_SEND.equals(intent.getAction())?intent.getCharSequenceExtra(Intent.EXTRA_TEXT):null;String source=shared!=null&&shared.length()<=1048576?shared.toString():Intent.ACTION_VIEW.equals(intent.getAction())?intent.getDataString():null;if(source!=null&&source.length()<=1048576){String initial=source;main.post(()->startActivity(new Intent(this,ProfilesActivity.class).putExtra("importSource",initial)));intent.removeExtra(Intent.EXTRA_TEXT);intent.setData(null);}String url=intent.getStringExtra("subscriptionUrl");if(url!=null&&url.length()<=2048)main.post(()->importDialog(url));String screen=intent.getStringExtra("screen");if("captcha".equals(screen)&&TunnelService.hasPendingCaptcha())main.post(()->startActivity(new Intent(this,CaptchaActivity.class)));main.post(()->{if("subscription".equals(screen))refresh.requestFocus();else if("diagnostics".equals(screen))startActivity(new Intent(this,DiagnosticsActivity.class));else if("connection".equals(screen))connect.requestFocus();});}
-    @Override protected void onResume(){super.onResume();getContentResolver().registerContentObserver(StateStore.URI,true,observer);loadSaved();refreshAccount();main.removeCallbacks(accountTick);main.postDelayed(accountTick,60000);}
-    @Override protected void onPause(){main.removeCallbacks(accountTick);getContentResolver().unregisterContentObserver(observer);super.onPause();}
+    @Override protected void onResume(){super.onResume();getContentResolver().registerContentObserver(StateStore.URI,true,observer);loadSaved();refreshAccount();main.removeCallbacks(accountTick);main.postDelayed(accountTick,60000);main.removeCallbacks(statusTick);main.post(statusTick);}
+    @Override protected void onPause(){main.removeCallbacks(accountTick);main.removeCallbacks(statusTick);getContentResolver().unregisterContentObserver(observer);super.onPause();}
     @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
     private final Runnable accountTick=new Runnable(){@Override public void run(){refreshAccount();render();main.postDelayed(this,60000);}};
+    private final Runnable statusTick=new Runnable(){@Override public void run(){refreshServiceStatus();main.postDelayed(this,5000);}};
     private BlinkOrbit orbit;
     private int dp(int n){return BlinkStyle.dp(this,n);}
     private TextView text(String s,int size,int color){return BlinkStyle.text(this,s,size,color);}
@@ -60,6 +62,7 @@ public final class NetworkActivity extends Activity {
     private Button button(LinearLayout parent,String label,Runnable action){return BlinkStyle.button(this,parent,label,action);}
     private void buildUI(){
         LinearLayout root=BlinkStyle.page(this,"Твоя сеть. Твои правила.","Один Blink — и ты на связи.");
+        maintenanceBanner=text("",14,0xffffbb76);maintenanceBanner.setPadding(dp(16),dp(14),dp(16),dp(14));maintenanceBanner.setBackground(BlinkStyle.surface(0xff3e3028,0xffb48250,16,this));root.addView(maintenanceBanner);maintenanceBanner.setVisibility(View.GONE);
         boolean wide=DeviceLayout.twoColumns(getResources().getConfiguration());
         LinearLayout panels=new LinearLayout(this);panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);panels.setClipChildren(false);root.addView(panels);
         LinearLayout connection=BlinkStyle.card(this,panels,"");LinearLayout account=BlinkStyle.card(this,panels,"Подписка и доступ");
@@ -86,6 +89,7 @@ public final class NetworkActivity extends Activity {
         paymentStatus=text("Оплаченный срок",18,BlinkStyle.TEXT);account.addView(paymentStatus);
         paymentBalance=text("Добавьте подписку TURN для проверки оплаты",15,BlinkStyle.MUTED);account.addView(paymentBalance);
         paymentDate=text("",13,BlinkStyle.MUTED);account.addView(paymentDate);
+        button(account,"Маршрутизация",()->startActivity(new Intent(this,RoutingActivity.class)));
         button(account,"Все серверы и подписки",()->startActivity(new Intent(this,ProfilesActivity.class)));
         refresh=button(account,"Обновить подписку",()->{if("profile".equals(saved.optString("mode")))openProfiles();else refresh(null);});importLink=button(account,"Добавить / заменить ссылку",()->{if("profile".equals(saved.optString("mode")))openProfiles();else importDialog("");});forgetLink=button(account,"Забыть подписку",()->{if("profile".equals(saved.optString("mode")))openProfiles();else forget();});
         refresh.setVisibility(View.GONE);importLink.setVisibility(View.GONE);forgetLink.setVisibility(View.GONE);
@@ -103,8 +107,10 @@ public final class NetworkActivity extends Activity {
     }
     private void loadSaved(){try{saved=store.load();subscription=null;if(saved.has("document"))try{subscription=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,0);}catch(Exception ex){notice.setText("Срок подписки истёк. Обновите её или замените ссылку.");}}catch(Exception ex){showError(ex);}render();}
     private void render(){
-        if(status==null)return;captcha.setVisibility("captcha_required".equals(StateStore.state)&&TunnelService.hasPendingCaptcha()?View.VISIBLE:View.GONE);boolean active=StateStore.active();status.setText("stopped".equals(StateStore.state)?"Всё готово к подключению":StateStore.label());orbit.state(StateStore.state);detail.setText("stopped".equals(StateStore.state)?"Выбери сервер — остальное возьмёт на себя Blink.":StateStore.detail);connect.setText(active?"Отключить туннель":"Подключить туннель");connect.setEnabled(!busy||active);
+        if(status==null)return;
+        maintenanceBanner.setVisibility(ServiceStatus.maintenance?View.VISIBLE:View.GONE);maintenanceBanner.setText("Технические работы · "+ServiceStatus.message);captcha.setVisibility("captcha_required".equals(StateStore.state)&&TunnelService.hasPendingCaptcha()?View.VISIBLE:View.GONE);boolean active=StateStore.active();status.setText("stopped".equals(StateStore.state)?"Всё готово к подключению":StateStore.label());orbit.state(ServiceStatus.maintenance&&!"profile".equals(saved.optString("mode"))?"maintenance":StateStore.state);detail.setText("stopped".equals(StateStore.state)?"Выбери сервер — остальное возьмёт на себя Blink.":StateStore.detail);connect.setText(active?"Отключить туннель":"Подключить туннель");connect.setEnabled(!busy||active);
         updating=true;boolean isDirect="direct".equals(saved.optString("mode","vk"));boolean isOrdinary="profile".equals(saved.optString("mode"));modeGroup.check(isOrdinary?ordinary.getId():isDirect?direct.getId():vk.getId());updating=false;vk.setEnabled(!active&&!busy);direct.setEnabled(!active&&!busy);ordinary.setEnabled(!active&&!busy);
+        if(ServiceStatus.maintenance&&!isOrdinary){status.setText("Технические работы");detail.setText("Обновляем сервер. Соединение может быть нестабильно.");connect.setEnabled(active);}
         importLink.setEnabled(!busy);forgetLink.setEnabled(!busy);
         transport.setText("Параметры TURN · "+VKOptions.from(saved).transport.toUpperCase(java.util.Locale.ROOT));transport.setEnabled(!active&&!busy&&!isDirect&&!isOrdinary);
         select.setEnabled(!active&&!busy);refresh.setText(isOrdinary?"Управлять VPN-подписками":"Обновить подписку");importLink.setText(isOrdinary?"Добавить VPN-профиль":"Добавить / заменить ссылку");forgetLink.setText(isOrdinary?"Удалить VPN-профиль":"Забыть подписку");transport.setVisibility(View.GONE);refresh.setEnabled(!busy&&(isOrdinary||saved.has("url")));probe.setEnabled(!busy&&"ready".equals(StateStore.state));
@@ -112,12 +118,14 @@ public final class NetworkActivity extends Activity {
         else if(!saved.has("document")){profile.setText("Подписка не добавлена");expiry.setText("Добавьте ссылку из панели Vokop");revision.setText("");}
         else{profile.setText("Подписка требует обновления");expiry.setText("Подключение недоступно до загрузки действующей подписки");revision.setText("");}
         if(isOrdinary){try{JSONObject p=ProfilesStore.selected(saved);profile.setText(p.optString("name","VPN")+" · "+p.optString("kind"));expiry.setText("Обычный VPN-профиль · срок определяется сервером");revision.setText("Подключение напрямую, без TURN");}catch(Exception e){profile.setText("Выберите обычный VPN-профиль");expiry.setText("Откройте VPN-профили и импортируйте конфигурацию");revision.setText("");}}
+        if(!active&&!(ServiceStatus.maintenance&&!isOrdinary))detail.setText(RoutingSettings.summary(saved));
         select.setText(profile.getText()+"  ⌄");select.setContentDescription("Выбрать сервер. "+profile.getText());
         renderAccount();
         if(isOrdinary){try{JSONObject metadata=ProfilesStore.selected(saved).optJSONObject("subscriptionMetadata");long until=metadata==null?0:metadata.optLong("expire",0);if(until>0){long remaining=Math.max(0,until-System.currentTimeMillis()/1000);int color=remaining<=259200?0xffff7185:BlinkStyle.ACCENT;paymentStatus.setText(metadata.optString("title","Подписка провайдера"));paymentStatus.setTextColor(color);paymentBalance.setText(remaining==0?"Срок закончился":remaining<86400?"Осталось менее суток":"Осталось "+remaining/86400+" дн.");paymentBalance.setTextColor(color);paymentDate.setText("До "+DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(new Date(until*1000))+" · по данным обновления подписки");paymentDate.setTextColor(color);expiry.setTextColor(color);expiry.setText("Действует до "+DateFormat.getDateInstance().format(new Date(until*1000)));}}catch(Exception ignored){}}
         traffic.setText(String.format(java.util.Locale.ROOT,"Отправлено %.1f КБ   ·   Получено %.1f КБ",StateStore.tx/1024.0,StateStore.rx/1024.0));diagnostic.setText(StateStore.probe+(StateStore.egress.isEmpty()?"":"\nВнешний IP: "+StateStore.egress+" · "+StateStore.rtt+" мс")+(StateStore.timings.isEmpty()?"":"\n"+StateStore.timings));
     }
     private void connectRequested(){
+        if(ServiceStatus.maintenance&&!"profile".equals(saved.optString("mode"))&&!StateStore.active()){notice.setText("На сервере технические работы. Попробуйте позже.");return;}
         if(StateStore.active()){startService(new Intent(this,TunnelService.class).setAction(TunnelService.STOP));return;}
         if("profile".equals(saved.optString("mode"))){if(!ProfilesStore.valid(saved)){startActivity(new Intent(this,ProfilesActivity.class));return;}}else if(subscription==null){importDialog("");return;}Intent consent=VpnService.prepare(this);if(consent!=null)startActivityForResult(consent,29);else startVPN();
     }
@@ -127,7 +135,8 @@ public final class NetworkActivity extends Activity {
         EditText input=new EditText(this);input.setSingleLine(true);input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);input.setHint("https://панель/…/api/vokop/v1/subscriptions/…");input.setText(initial);input.setTextSize(16);
         new AlertDialog.Builder(this).setTitle("Ссылка подписки Vokop").setMessage("Ссылка содержит ключ доступа. Она хранится в зашифрованном виде и не передаётся лаунчеру.").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Загрузить",(dialog,which)->refresh(input.getText().toString().trim())).show();
     }
-    private void refresh(String newURL){
+    private void refresh(String newURL){refresh(newURL,true);}
+    private void refresh(String newURL,boolean restartActive){
         if(busy)return;busy=true;render();worker.execute(()->{
             try{
                 String source=newURL==null?saved.getString("url"):newURL;
@@ -138,9 +147,9 @@ public final class NetworkActivity extends Activity {
                     int selected=0;String previousID="";
                     if(url.equals(current.optString("url"))){try{org.json.JSONArray old=new JSONObject(current.getString("document")).getJSONArray("profiles");previousID=old.getJSONObject(current.optInt("selected",0)).getString("id");}catch(Exception ignored){}}
                     for(int i=0;i<value.profiles.size();i++)if(previousID.equals(value.profiles.get(i).id)){selected=i;break;}
-                    current.put("mode","vk").put("url",url).put("document",doc).put("revision",value.revision).put("selected",selected);
+                    current.remove("routingServer");current.remove("routingServerURL");if(newURL!=null)current.put("mode","vk");current.put("url",url).put("document",doc).put("revision",value.revision).put("selected",selected);
                 });
-                main.post(()->{if(isDestroyed())return;saved=updated;subscription=value;busy=false;notice.setText("Подписка обновлена. Ссылка и ключи сохранены защищённо.");render();accountChecked=0;refreshAccount();StateStore.notifyChanged(this);if(StateStore.active())startForegroundService(new Intent(this,TunnelService.class).setAction(TunnelService.RESTART));});
+                main.post(()->{if(isDestroyed())return;saved=updated;subscription=value;busy=false;notice.setText("Подписка обновлена. Ссылка и ключи сохранены защищённо.");render();accountChecked=0;refreshAccount();StateStore.notifyChanged(this);if(restartActive&&StateStore.active()&&!"profile".equals(saved.optString("mode")))startForegroundService(new Intent(this,TunnelService.class).setAction(TunnelService.RESTART));});
             }catch(Exception ex){main.post(()->{busy=false;showError(ex);render();});}
         });
     }
@@ -161,12 +170,22 @@ public final class NetworkActivity extends Activity {
         menu.getMenu().setGroupCheckable(0,true,true);
         menu.setOnMenuItemClickListener(item->{try{saved=store.update(current->current.put(ordinaryMode?"vpnSelected":"selected",item.getItemId()));render();StateStore.notifyChanged(this);}catch(Exception e){showError(e);}return true;});menu.show();
     }
+    private void refreshServiceStatus(){
+        String url=saved.optString("url","");if(url.isEmpty()||statusLoading)return;statusLoading=true;
+        worker.execute(()->{try{
+            JSONObject status=ServiceStatus.parse(mobile.Mobile.fetchPanelControl(ServiceStatus.statusURL(url),TunnelService::protectControl));
+            JSONObject policy=null;if(System.currentTimeMillis()-policyChecked>=60000&&!status.optBoolean("maintenance"))try{String raw=mobile.Mobile.fetchPanelControl(url+"/routing",TunnelService::protectControl);if(!"null".equals(raw.trim()))policy=new JSONObject(raw);policyChecked=System.currentTimeMillis();}catch(Exception ignored){}
+            final JSONObject downloadedPolicy=policy;
+            if(downloadedPolicy!=null){JSONObject current=store.load();if(!downloadedPolicy.toString().equals(current.optJSONObject("routingServer")==null?"":current.optJSONObject("routingServer").toString()))store.update(value->{if(url.equals(value.optString("url")))value.put("routingServer",downloadedPolicy).put("routingServerURL",url);});}
+            main.post(()->{statusLoading=false;if(isDestroyed()||!url.equals(saved.optString("url")))return;try{saved=store.load();}catch(Exception ignored){}long revision=status.optLong("revision");boolean changed=statusRevision>=0&&statusRevision!=revision;statusRevision=revision;ServiceStatus.maintenance=status.optBoolean("maintenance");ServiceStatus.message=status.optString("message");render();if(changed&&!ServiceStatus.maintenance)needsSubscriptionRefresh=true;if(needsSubscriptionRefresh&&!busy&&!ServiceStatus.maintenance){needsSubscriptionRefresh=false;refresh(null,false);}});
+        }catch(Exception ignored){main.post(()->statusLoading=false);}});
+    }
     private void refreshAccount(){
         String url=saved.optString("url","");
         if(url.isEmpty()){accountStatus=null;render();return;}
         if(accountLoading||System.currentTimeMillis()-accountChecked<30000)return;
         accountLoading=true;
-        worker.execute(()->{JSONObject status=null;try{Subscription.validateURL(url);status=new JSONObject(SubscriptionHTTP.fetchHTTPS(url+"/account","application/json",u->(javax.net.ssl.HttpsURLConnection)u.openConnection()));if(!"vokop.account.v1".equals(status.optString("schema"))||status.optLong("checked_at")<=0)status=null;}catch(Exception ignored){}JSONObject result=status;main.post(()->{accountLoading=false;if(isDestroyed()||!url.equals(saved.optString("url")))return;accountStatus=result;accountChecked=System.currentTimeMillis();render();});});
+        worker.execute(()->{JSONObject status=null;try{Subscription.validateURL(url);status=new JSONObject(mobile.Mobile.fetchPanelControl(url+"/account",TunnelService::protectControl));if(!"vokop.account.v1".equals(status.optString("schema"))||status.optLong("checked_at")<=0)status=null;}catch(Exception ignored){}JSONObject result=status;main.post(()->{accountLoading=false;if(isDestroyed()||!url.equals(saved.optString("url")))return;accountStatus=result;accountChecked=System.currentTimeMillis();render();});});
     }
     private void renderAccount(){
         if(paymentStatus==null)return;

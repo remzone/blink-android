@@ -14,7 +14,13 @@ public class SubscriptionTest {
         assertEquals("udp",new JSONObject(p.nativeJSON("vk","1.1.1.1",s.expiresAt,"udp")).getString("turnTransport"));
         try{p.nativeJSON("vk","1.1.1.1",s.expiresAt,"automatic");fail("unknown transport accepted");}catch(Exception expected){}
     }
-    @Test public void refusesExpiredOrReplayedFeed()throws Exception{reject(feed(),5000,0);reject(feed(),2000,5);reject(feed().replace("5000","9999999"),2000,0);reject(feed().replace("1000","3001"),2000,0);}
+    @Test public void refusesExpiredOrReplayedFeed()throws Exception{reject(feed(),5000,0);reject(feed(),2000,5);reject(feed().replace("5000","253402300800"),2000,0);reject(feed().replace("1000","3001"),2000,0);}
+    @Test public void acceptsLongSubscriptionsAndV3Routing()throws Exception{
+        assertEquals(9999999,Subscription.parse(feed().replace("5000","9999999"),2000,0).expiresAt);
+        JSONObject doc=new JSONObject(feed()).put("schema","vokop.subscription.v3");reject(doc.toString(),2000,0);
+        doc.put("routing",new JSONObject().put("schema","blink.routing.v1").put("mode","selected").put("revision",1).put("domains",new org.json.JSONArray().put("example.org")).put("ips",new org.json.JSONArray()));
+        assertNotNull(Subscription.parse(doc.toString(),2000,0).routing);
+    }
     @Test public void rejectsFractionalAndStringNumbers()throws Exception{reject(feed().replace("56000","56000.5"),2000,0);reject(feed().replace("56000","\"56000\""),2000,0);}
     @Test public void rejectsHostTricksAndPrivatePeers()throws Exception{for(String call:new String[]{"http://vk.ru/call/join/demo","https://vk.ru.evil.example/call/join/demo","https://user@vk.ru/call/join/demo","https://vk.ru:443/call/join/demo","https://vk.ru/call/join/demo?x=1"})reject(feed().replace("https://vk.ru/call/join/demo",call),2000,0);for(String host:new String[]{"127.0.0.1","192.168.1.50","10.0.0.1","localhost","fake.localhost"})reject(feed().replace("vpn.example.org",host),2000,0);}
     @Test public void rejectsDuplicateAndEscapedDuplicateKeys()throws Exception{reject(feed().replace("\"revision\":4","\"revision\":4,\"revision\":5"),2000,0);reject(feed().replace("\"revision\":4","\"revision\":4,\"rev\\u0069sion\":5"),2000,0);}

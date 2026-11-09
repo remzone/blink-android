@@ -12,7 +12,7 @@ final class SubscriptionHTTP {
     static final class Failure extends Exception { Failure(String message){super(message);} }
     interface ConnectionFactory { HttpsURLConnection open(URL url) throws Exception; }
     static String fetch(String url)throws Exception{
-        Subscription.validateURL(url);return fetchHTTPS(url,"application/json",u->(HttpsURLConnection)u.openConnection());
+        Subscription.validateURL(url);return mobile.Mobile.fetchPanelControl(url,TunnelService::protectControl);
     }
     static URI validateURL(String raw)throws Exception{
         URI u;try{u=new URI(raw);}catch(Exception e){throw new Failure("Некорректная ссылка подписки.");}

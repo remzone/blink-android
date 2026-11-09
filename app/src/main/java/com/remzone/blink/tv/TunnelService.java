@@ -37,8 +37,10 @@ public final class TunnelService extends VpnService {
     private final Object outputLock=new Object();
     private volatile Engine engine;private volatile ParcelFileDescriptor tun;
     private volatile boolean running;private Thread packets;
+    private boolean selectiveRouting;
     private JSONObject importedProfile;private String profileName="Blink";private volatile boolean establishing;
     private long unreadySince;private String lastNative="";
+    static boolean protectControl(long fd){TunnelService service=live;return service==null||service.protect((int)fd);}
     static boolean protectDiagnostic(java.net.Socket socket){TunnelService service=live;return service==null||service.protect(socket);}
     @Override public void onCreate(){super.onCreate();live=this;NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("tunnel","VPN-соединение",NotificationManager.IMPORTANCE_LOW));}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -54,13 +56,14 @@ public final class TunnelService extends VpnService {
         if(running)return;
         try{
             if(VpnService.prepare(this)!=null)throw new Exception("Подтвердите разрешение VPN в сетевых настройках");
-            JSONObject saved=new SecureStore(this).load();DiagnosticJournal.begin(this,saved);
+            JSONObject saved=new SecureStore(this).load();JSONObject routing=RoutingSettings.effective(saved);selectiveRouting="selected".equals(routing.optString("mode"));DiagnosticJournal.begin(this,saved);
             String mode=saved.optString("mode","vk");
+            if(!"profile".equals(mode)&&saved.has("url")){try{JSONObject status=ServiceStatus.parse(Mobile.fetchPanelControl(ServiceStatus.statusURL(saved.getString("url")),TunnelService::protectControl));if(status.optBoolean("maintenance"))throw new ServiceStatus.MaintenanceException();}catch(ServiceStatus.MaintenanceException e){throw e;}catch(Exception ignored){}}
             StateStore.mode=mode;StateStore.turnTransport="auto";StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
             if("profile".equals(mode)){
                 importedProfile=new JSONObject(Mobile.importProfile(ProfilesStore.selected(saved).getString("source")));
                 profileName=importedProfile.getString("name");StateStore.set(this,"connecting","Подготовка обычного VPN-профиля…");
-                engine=Mobile.startProfile(importedProfile.toString(),this::writePacket,fd->protect((int)fd));
+                engine=Mobile.startProfileRouted(importedProfile.toString(),routing.toString(),this::writePacket,fd->protect((int)fd));
             }else{
                 if(!mode.equals("vk")&&!mode.equals("direct"))throw new Exception("Выберите режим туннеля");
                 Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
@@ -68,9 +71,10 @@ public final class TunnelService extends VpnService {
                 StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
                 if("wireguard".equals(s.profiles.get(selected).backend))importedProfile=new JSONObject(Mobile.importProfile(s.profiles.get(selected).wireguard));
                 StateStore.turnTransport=s.profiles.get(selected).options==null?"auto":s.profiles.get(selected).options.optString("transport","auto");
-                engine=Mobile.startVK(new VKOptions().nativeJSON(s.profiles.get(selected),mode,s.expiresAt),this::writePacket,fd->protect((int)fd));
+                engine=Mobile.startVK(new JSONObject(new VKOptions().nativeJSON(s.profiles.get(selected),mode,s.expiresAt)).put("routing",routing).toString(),this::writePacket,fd->protect((int)fd));
                 profileName=s.profiles.get(selected).name;
             }
+            if(selectiveRouting)importedProfile=null;
             running=true;unreadySince=android.os.SystemClock.elapsedRealtime();lastNative="";main.post(monitor);
         }catch(Exception ex){finishTunnel("error",safeError(ex));}
     }
@@ -79,7 +83,7 @@ public final class TunnelService extends VpnService {
         try{if(!running||engine==null||tun!=null||!("ready".equals(engine.status())||"profile".equals(StateStore.mode)&&"running".equals(engine.status())))return;
             Builder b=new Builder().setSession("Blink · "+profileName).setMtu(importedProfile==null?1280:importedProfile.getInt("mtu")).setBlocking(false).setConfigureIntent(PendingIntent.getActivity(this,0,new Intent(this,NetworkActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT));
             if(importedProfile==null||"xray".equals(importedProfile.optString("kind"))){
-                b.addAddress("10.77.0.2",32).addDnsServer("1.1.1.1");for(String route:RoutePolicy.ipv4())addRoute(b,route);
+                b.addAddress("10.77.0.2",32).addDnsServer("1.1.1.1");if(selectiveRouting)b.addAddress("fd77::2",128).addRoute("::",0);for(String route:RoutePolicy.ipv4())addRoute(b,route);
             }else{
                 org.json.JSONArray addresses=importedProfile.getJSONArray("addresses"),dns=importedProfile.getJSONArray("dns"),routes=importedProfile.getJSONArray("routes");
                 for(int i=0;i<addresses.length();i++){String[] a=addresses.getString(i).split("/");b.addAddress(a[0],Integer.parseInt(a[1]));}
