@@ -10,7 +10,7 @@ public class SubscriptionTest {
     @Test public void acceptsPanelFieldsAndBothVKDomains()throws Exception{for(String domain:new String[]{"vk.ru","www.vk.ru","vk.com","www.vk.com"}){Subscription s=Subscription.parse(feed().replace("vk.ru",domain),2000,4);assertEquals(4,s.revision);assertEquals(56000,s.profiles.get(0).port);assertEquals("direct",new JSONObject(s.profiles.get(0).nativeJSON("direct","1.1.1.1",s.expiresAt)).getString("mode"));assertEquals("https://"+domain+"/call/join/demo",new JSONObject(s.profiles.get(0).nativeJSON("vk","1.1.1.1",s.expiresAt)).getString("vkCallURL"));}}
     @Test public void preservesExplicitTURNTransport()throws Exception{
         Subscription s=Subscription.parse(feed(),2000,4);Subscription.Profile p=s.profiles.get(0);
-        assertEquals("tcp",new JSONObject(p.nativeJSON("vk","1.1.1.1",s.expiresAt)).getString("turnTransport"));
+        assertEquals("auto",new JSONObject(p.nativeJSON("vk","1.1.1.1",s.expiresAt)).getString("turnTransport"));
         assertEquals("udp",new JSONObject(p.nativeJSON("vk","1.1.1.1",s.expiresAt,"udp")).getString("turnTransport"));
         try{p.nativeJSON("vk","1.1.1.1",s.expiresAt,"automatic");fail("unknown transport accepted");}catch(Exception expected){}
     }

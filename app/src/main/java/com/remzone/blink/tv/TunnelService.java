@@ -55,7 +55,7 @@ public final class TunnelService extends VpnService {
             if(VpnService.prepare(this)!=null)throw new Exception("Подтвердите разрешение VPN в сетевых настройках");
             JSONObject saved=new SecureStore(this).load();
             String mode=saved.optString("mode","vk");
-            StateStore.mode=mode;StateStore.turnTransport=saved.optString("turnTransport","tcp");StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
+            StateStore.mode=mode;StateStore.turnTransport=Subscription.transport(saved);StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
             if("profile".equals(mode)){
                 importedProfile=new JSONObject(Mobile.importProfile(ProfilesStore.selected(saved).getString("source")));
                 profileName=importedProfile.getString("name");StateStore.set(this,"connecting","Подготовка обычного VPN-профиля…");
@@ -65,7 +65,7 @@ public final class TunnelService extends VpnService {
                 Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
                 int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
                 StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
-                engine=Mobile.startVK(s.profiles.get(selected).nativeJSON(mode,"1.1.1.1",s.expiresAt,saved.optString("turnTransport","tcp")),this::writePacket,fd->protect((int)fd));
+                engine=Mobile.startVK(s.profiles.get(selected).nativeJSON(mode,"1.1.1.1",s.expiresAt,Subscription.transport(saved)),this::writePacket,fd->protect((int)fd));
                 profileName=s.profiles.get(selected).name;
             }
             running=true;unreadySince=android.os.SystemClock.elapsedRealtime();lastNative="";main.post(monitor);

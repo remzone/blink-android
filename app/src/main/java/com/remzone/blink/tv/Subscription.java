@@ -14,11 +14,15 @@ final class Subscription {
     static final class Profile {
         final String id,name,uuid,host,call;final int port,streams;
         Profile(String i,String n,String u,String h,int p,String c,int s){id=i;name=n;uuid=u;host=h;port=p;call=c;streams=s;}
-        String nativeJSON(String mode,String dns,long expiry)throws Exception{return nativeJSON(mode,dns,expiry,"tcp");}
+        String nativeJSON(String mode,String dns,long expiry)throws Exception{return nativeJSON(mode,dns,expiry,"auto");}
         String nativeJSON(String mode,String dns,long expiry,String transport)throws Exception{
-            if(!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите TCP или UDP для VK");
+            if(!transport.equals("auto")&&!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите Авто, TCP или UDP для VK");
             return new JSONObject().put("turnTransport",transport).put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
         }
+    }
+    static String transport(JSONObject saved){
+        // Migrate the old implicit TCP policy; explicit new choices remain stable.
+        return saved.optInt("turnTransportPolicy",0)<2?"auto":saved.optString("turnTransport","auto");
     }
     static String validateURL(String raw)throws Exception{
         if(raw==null||raw.length()>2048)throw new Exception("Нужна HTTPS-ссылка подписки Vokop");
