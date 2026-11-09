@@ -1,0 +1,22 @@
+package com.remzone.blink.tv;
+
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import org.json.JSONObject;
+
+final class SubscriptionMetadata {
+    static String clean(String s,int count){StringBuilder out=new StringBuilder();s.codePoints().filter(c->!Character.isISOControl(c)&&(Character.getType(c)!=Character.FORMAT||c==0x200d||c>=0xe0020&&c<=0xe007f)).limit(count).forEach(out::appendCodePoint);return out.toString().trim();}
+    static JSONObject parse(Map<String,String> headers,String body)throws Exception{
+        Map<String,String> values=new HashMap<>();headers.forEach((k,v)->{if(k!=null&&v!=null)values.put(k.toLowerCase(Locale.ROOT),v);});
+        if(body.length()<=1048576){String text=body;if(!body.contains("://"))try{text=decode(body);}catch(Exception ignored){}for(String line:text.split("\\r?\\n")){line=line.trim();int colon=line.indexOf(':');if(!line.startsWith("#")||colon<2)continue;String key=line.substring(1,colon).toLowerCase(Locale.ROOT);if(Arrays.asList("profile-title","announce","subscription-userinfo").contains(key)&&!values.containsKey(key))values.put(key,line.substring(colon+1).trim());}}
+        JSONObject out=new JSONObject();for(String[] pair:new String[][]{{"profile-title","title"},{"announce","announcement"}}){String value=values.get(pair[0]);if(value==null||value.length()>4096)continue;try{if(value.startsWith("base64:"))value=decode(value.substring(7));value=clean(value,pair[1].equals("title")?120:240);if(!value.isEmpty())out.put(pair[1],value);}catch(Exception ignored){}}
+        String info=values.get("subscription-userinfo");if(info!=null&&info.length()<=4096)for(String field:info.split(";")){String[] p=field.trim().split("=",2);if(p.length!=2||!Arrays.asList("upload","download","total","expire").contains(p[0].trim()))continue;try{long n=Long.parseLong(p[1].trim());if(n>=0&&( !p[0].trim().equals("expire")||n>0&&n<=253402300799L))out.put(p[0].trim(),n);}catch(Exception ignored){}}
+        return out;
+    }
+    private static String decode(String s){s=s.replaceAll("\\s","").replace('-','+').replace('_','/');return new String(Base64.getDecoder().decode(s),StandardCharsets.UTF_8);}
+    static String flag(String name){int[] p=name.codePoints().toArray();for(int i=0;i+1<p.length;i++)if(p[i]>=0x1f1e6&&p[i]<=0x1f1ff&&p[i+1]>=0x1f1e6&&p[i+1]<=0x1f1ff)return new String(p,i,2);return "";}
+    static String emoji(String name){String f=flag(name);if(!f.isEmpty())return f;name=name.trim();if(name.isEmpty())return "";int cp=name.codePointAt(0);if(!(cp>=0x1f000&&cp<=0x1faff||cp>=0x2600&&cp<=0x27bf))return "";int end=Character.charCount(cp);while(end<name.length()){int next=name.codePointAt(end);if(next==0xfe0f||next>=0x1f3fb&&next<=0x1f3ff){end+=Character.charCount(next);continue;}if(next==0x200d&&end+1<name.length()){end++;end+=Character.charCount(name.codePointAt(end));continue;}break;}return name.substring(0,end);}
+    static String country(String name){String flag=flag(name);if(flag.isEmpty())return "";int[] p=flag.codePoints().toArray();String code=""+(char)(p[0]-0x1f1e6+'A')+(char)(p[1]-0x1f1e6+'A');return Arrays.asList(Locale.getISOCountries()).contains(code)?new Locale("",code).getDisplayCountry():"";}
+    static String group(String source){java.util.regex.Matcher match=java.util.regex.Pattern.compile("[?&]x-durev-block=([^&#]+)").matcher(source);if(!match.find())return "";switch(match.group(1)){case "regular":return "Основные";case "whitelist":return "Белые списки";case "autoloca":return "Автовыбор";case "torrent":return "Торренты";case "warp":return "WARP";case "russian":return "Россия";default:return "";}}
+    static String summary(JSONObject metadata){if(metadata==null)return "";StringBuilder s=new StringBuilder(metadata.optString("title"));try{long u=metadata.optLong("upload",0),d=metadata.optLong("download",0),used=Math.addExact(u,d);if(metadata.has("upload")||metadata.has("download")){s.append(" · ").append(String.format(Locale.ROOT,"%.1f МиБ",used/1048576.0));if(metadata.optLong("total")>0)s.append(" из ").append(String.format(Locale.ROOT,"%.1f МиБ",metadata.optLong("total")/1048576.0));}}catch(ArithmeticException ignored){}if(metadata.optLong("expire")>0)s.append(" · до ").append(java.text.DateFormat.getDateInstance().format(new Date(metadata.optLong("expire")*1000)));String announcement=metadata.optString("announcement");if(!announcement.isEmpty())s.append("\n").append(announcement);return s.toString();}
+}

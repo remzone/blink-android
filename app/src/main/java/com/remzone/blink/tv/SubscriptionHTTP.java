@@ -30,7 +30,10 @@ final class SubscriptionHTTP {
         }catch(Exception invalid){return false;}
     }
     private static int port(URI u){return u.getPort()<0?443:u.getPort();}
-    static String fetchHTTPS(String raw,String accept,ConnectionFactory factory)throws Exception{
+    static final class Document {final String body;final org.json.JSONObject metadata;Document(String b,org.json.JSONObject m){body=b;metadata=m;}}
+    static Document fetchStandardDocument(String raw)throws Exception{return fetchDocument(raw,"*/*",u->(HttpsURLConnection)u.openConnection());}
+    static String fetchHTTPS(String raw,String accept,ConnectionFactory factory)throws Exception{return fetchDocument(raw,accept,factory).body;}
+    static Document fetchDocument(String raw,String accept,ConnectionFactory factory)throws Exception{
         URI original=validateURL(raw),current=original;
         long deadline=System.nanoTime()+30_000_000_000L;
         for(int redirects=0;;){
@@ -60,7 +63,8 @@ final class SubscriptionHTTP {
                     }
                     String body=out.toString(StandardCharsets.UTF_8.name());
                     if(!accept.equals("application/json"))SubscriptionFeedNotice.validate(body);
-                    return body;
+                    java.util.Map<String,String> headers=new java.util.HashMap<>();for(String key:new String[]{"profile-title","announce","subscription-userinfo"})headers.put(key,c.getHeaderField(key));
+                    return new Document(body,SubscriptionMetadata.parse(headers,body));
                 }
             }catch(javax.net.ssl.SSLException e){throw new Failure("HTTPS-сертификат сервера не прошёл проверку.");}
             catch(java.net.SocketTimeoutException e){throw new Failure("Сервер не ответил вовремя.");}

@@ -22,6 +22,8 @@ var ErrCaptchaRequired = errors.New("captcha_required")
 // Config contains no server administration credentials. Streams is 1..16.
 // VKCallURL is the VK call join link from an authenticated subscription.
 type Config struct {
+	Tuning     Tuning
+	TURNServer string
 	// DNSServer is an explicitly selected physical-network bootstrap DNS IP.
 	// It is not a tunnel DNS server; all queries are socket-protected.
 	DNSServer     string
@@ -85,6 +87,12 @@ func start(ctx context.Context, cfg Config, protect func(uintptr) bool, factory 
 	}
 	if cfg.TURNTransport != "" && cfg.TURNTransport != "auto" && cfg.TURNTransport != "tcp" && cfg.TURNTransport != "udp" {
 		return nil, errors.New("invalid TURN transport")
+	}
+	if cfg.TURNServer != "" && !validTURNOverride(cfg.TURNServer) {
+		return nil, errors.New("invalid TURN override")
+	}
+	if err := cfg.Tuning.validate(); err != nil {
+		return nil, err
 	}
 	if net.ParseIP(cfg.DNSServer) == nil || cfg.Streams < 1 || cfg.Streams > 16 || cfg.PeerPort < 1 || cfg.PeerPort > 65535 || !validHost(cfg.PeerHost) {
 		return nil, errors.New("invalid transport configuration")
@@ -263,6 +271,7 @@ func (c *Client) maintain(id int) {
 			session, cleanup, err = c.factory(c.networkCtx, peer)
 		}
 		if err != nil {
+			RecordDiagnostic("native.vk.retry", map[string]int64{"stream": int64(id), "stage": diagnosticFailureStage(err)})
 			if errors.Is(err, ErrCaptchaRequired) {
 				c.paused.Store(true)
 				c.setState("captcha_required")
@@ -282,6 +291,7 @@ func (c *Client) maintain(id int) {
 		select {
 		case <-c.networkCtx.Done():
 		case <-session.CloseChan():
+			RecordDiagnostic("native.vk.smux_closed", map[string]int64{"stream": int64(id)})
 		}
 		c.mu.Lock()
 		for i, s := range c.sessions {
@@ -337,7 +347,15 @@ func pipe(ctx context.Context, a, b net.Conn) {
 	_ = b.Close()
 	<-done
 }
+func validTURNOverride(address string) bool {
+	host, port, err := net.SplitHostPort(address)
+	p, e := strconv.Atoi(port)
+	return err == nil && e == nil && p >= 1 && p <= 65535 && validHost(host) && len(address) <= 260
+}
 func (c *Client) resolveTURN(ctx context.Context, address string) (string, error) {
+	if c.config.TURNServer != "" {
+		address = c.config.TURNServer
+	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return "", errors.New("invalid TURN address")

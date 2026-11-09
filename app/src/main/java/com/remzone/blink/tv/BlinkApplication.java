@@ -8,7 +8,7 @@ import android.webkit.WebView;
 import com.vk.id.captcha.api.VKCaptcha;
 
 public final class BlinkApplication extends Application implements Application.ActivityLifecycleCallbacks {
-    @Override public void onCreate(){super.onCreate();try{mobile.Mobile.prepareAssets(new java.io.File(getFilesDir(),"xray-assets").getAbsolutePath());}catch(Exception e){StateStore.detail="Не удалось подготовить сетевые правила. Перезапустите клиент.";}VKCaptcha.INSTANCE.init(this);registerActivityLifecycleCallbacks(this);}
+    @Override public void onCreate(){super.onCreate();DiagnosticJournal.init(this);try{mobile.Mobile.prepareAssets(new java.io.File(getFilesDir(),"xray-assets").getAbsolutePath());}catch(Exception e){StateStore.detail="Не удалось подготовить сетевые правила. Перезапустите клиент.";}VKCaptcha.INSTANCE.init(this);registerActivityLifecycleCallbacks(this);}
     @Override public void onActivityCreated(Activity activity,Bundle state){
         if(DeviceLayout.isTV(activity)&&activity.getClass().getName().equals("com.vk.id.captcha.web.VKCaptchaWebViewActivity"))activity.getWindow().getDecorView().post(()->{
             WebView web=findWeb(activity.getWindow().getDecorView());if(web!=null){TvCaptchaPointer pointer=new TvCaptchaPointer(activity,web);activity.addContentView(pointer,new ViewGroup.LayoutParams(-1,-1));pointer.requestFocus();}

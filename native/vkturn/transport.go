@@ -34,15 +34,24 @@ func (c *Client) createSession(ctx context.Context, peer *net.UDPAddr) (*smux.Se
 // Isolated from VK authentication so both TURN transports can be wire-tested locally.
 func (c *Client) createSessionWithCredentials(ctx context.Context, peer *net.UDPAddr, user, pass, raw string) (*smux.Session, func(), error) {
 	if c.config.TURNTransport == "auto" || c.config.TURNTransport == "" {
-		session, cleanup, _, err := raceTURNTransport(ctx, func(child context.Context, network string) (*smux.Session, func(), error) {
+		started := time.Now()
+		session, cleanup, network, err := raceTURNTransport(ctx, func(child context.Context, network string) (*smux.Session, func(), error) {
 			return c.createTURNTransportSession(child, peer, user, pass, raw, network)
 		})
+		if err == nil {
+			mode := int64(1)
+			if network == "tcp" {
+				mode = 2
+			}
+			RecordDiagnostic("native.vk.smux_ready", map[string]int64{"stage": 6, "mode": mode, "elapsedMs": time.Since(started).Milliseconds()})
+		}
 		return session, cleanup, err
 	}
 	return c.createTURNTransportSession(ctx, peer, user, pass, raw, c.config.TURNTransport)
 }
 
 func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAddr, user, pass, raw, network string) (*smux.Session, func(), error) {
+	diagnosticStage("native.vk.turn_resolve", 1)
 	address, err := c.resolveTURN(ctx, raw)
 	if err != nil {
 		return nil, nil, err
@@ -53,6 +62,7 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	if err != nil {
 		return nil, nil, errors.New("TURN connection failed")
 	}
+	diagnosticStage("native.vk.turn_connected", 2)
 	// Allocate has no context parameter. Closing its underlying TCP connection
 	// interrupts pending transactions and all DTLS reads on cancellation.
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
@@ -97,6 +107,7 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	if err != nil {
 		return nil, nil, errors.New("TURN allocation failed")
 	}
+	diagnosticStage("native.vk.turn_allocated", 3)
 	closers = append(closers, func() { _ = relay.Close() })
 	cert, err := selfsign.GenerateSelfSigned()
 	if err != nil {
@@ -119,19 +130,31 @@ func (c *Client) createTURNTransportSession(ctx context.Context, peer *net.UDPAd
 	}
 	handshakeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	diagnosticStage("native.vk.dtls_begin", 4)
 	if err = dtlsConn.HandshakeContext(handshakeCtx); err != nil {
+		if ctx.Err() == nil {
+			diagnosticStage("native.vk.dtls_failed", 4)
+		}
 		return nil, nil, errors.New("DTLS handshake failed")
 	}
-	kcp, err := tcputil.NewKCPOverDTLS(dtlsConn, false)
+	diagnosticStage("native.vk.dtls_ready", 5)
+	kcp, err := tcputil.NewKCPOverDTLS(c.config.Tuning.paced(ctx, dtlsConn), false)
 	if err != nil {
 		return nil, nil, errors.New("KCP creation failed")
 	}
 	closers = append(closers, func() { _ = kcp.Close() })
+	c.config.Tuning.apply(kcp)
 	session, err := smux.Client(kcp, tcputil.DefaultSmuxConfig())
 	if err != nil {
 		return nil, nil, errors.New("smux creation failed")
 	}
 	closers = append(closers, func() { _ = session.Close() })
+	mode := int64(1)
+	if network == "tcp" {
+		mode = 2
+	}
+	closers = append(closers, startTransportMetrics(ctx, kcp, mode))
+	diagnosticStage("native.vk.smux_ready", 6)
 	success = true
 	return session, cleanup, nil
 }

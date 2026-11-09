@@ -27,6 +27,7 @@ import mobile.Mobile;
 public final class TunnelService extends VpnService {
     private static volatile TunnelService live;
     static JSONObject captcha(){try{TunnelService s=live;Engine e=s==null?null:s.engine;return e==null?new JSONObject():new JSONObject(e.captchaJSON());}catch(Exception ignored){return new JSONObject();}}
+    static boolean hasLiveTunnel(){TunnelService s=live;return s!=null&&(s.running||s.engine!=null||s.establishing);}
     static boolean hasPendingCaptcha(){return captcha().has("id");}
     static boolean answerCaptcha(String id,String kind,String value){TunnelService s=live;Engine e=s==null?null:s.engine;return e!=null&&e.submitCaptcha(id,kind,value);}
     static final String RESTART="com.remzone.blink.RESTART";
@@ -53,9 +54,9 @@ public final class TunnelService extends VpnService {
         if(running)return;
         try{
             if(VpnService.prepare(this)!=null)throw new Exception("Подтвердите разрешение VPN в сетевых настройках");
-            JSONObject saved=new SecureStore(this).load();
+            JSONObject saved=new SecureStore(this).load();DiagnosticJournal.begin(this,saved);
             String mode=saved.optString("mode","vk");
-            StateStore.mode=mode;StateStore.turnTransport=Subscription.transport(saved);StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
+            StateStore.mode=mode;StateStore.turnTransport=VKOptions.from(saved).transport;StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
             if("profile".equals(mode)){
                 importedProfile=new JSONObject(Mobile.importProfile(ProfilesStore.selected(saved).getString("source")));
                 profileName=importedProfile.getString("name");StateStore.set(this,"connecting","Подготовка обычного VPN-профиля…");
@@ -65,7 +66,7 @@ public final class TunnelService extends VpnService {
                 Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
                 int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
                 StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
-                engine=Mobile.startVK(s.profiles.get(selected).nativeJSON(mode,"1.1.1.1",s.expiresAt,Subscription.transport(saved)),this::writePacket,fd->protect((int)fd));
+                engine=Mobile.startVK(VKOptions.from(saved).nativeJSON(s.profiles.get(selected),mode,s.expiresAt),this::writePacket,fd->protect((int)fd));
                 profileName=s.profiles.get(selected).name;
             }
             running=true;unreadySince=android.os.SystemClock.elapsedRealtime();lastNative="";main.post(monitor);
@@ -84,7 +85,7 @@ public final class TunnelService extends VpnService {
                 for(int i=0;i<dns.length();i++){String address=dns.getString(i);b.addDnsServer(address);b.addRoute(address,address.contains(":")?128:32);}
             }
             // Xray/VK stay IPv4-only. Explicit WG .conf addresses/routes control its families.
-            tun=b.establish();if(tun==null)throw new Exception("Система не разрешила создать VPN-интерфейс");
+            tun=b.establish();DiagnosticJournal.record("extension.routes_ready",new JSONObject());if(tun==null)throw new Exception("Система не разрешила создать VPN-интерфейс");
             ConnectivityManager cm=getSystemService(ConnectivityManager.class);
             for(Network n:cm.getAllNetworks()){NetworkCapabilities caps=cm.getNetworkCapabilities(n);if(caps!=null&&caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&!caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)){setUnderlyingNetworks(new Network[]{n});break;}}
             packets=new Thread(this::readPackets,"Blink-TUN");packets.start();
@@ -136,13 +137,14 @@ public final class TunnelService extends VpnService {
                 getSystemService(NotificationManager.class).notify(17,notification(StateStore.label()));
             }else StateStore.notifyChanged(TunnelService.this);
             if(!"ready".equals(state)&&unreadySince>0&&android.os.SystemClock.elapsedRealtime()-unreadySince>45000){control.execute(()->finishTunnel("error","Сервер не ответил за 45 секунд. Обычная сеть восстановлена."));return;}
+            control.execute(()->{if(running)DiagnosticJournal.heartbeat();});
             main.postDelayed(this,1000);
         }catch(Exception ex){control.execute(()->finishTunnel("error","Не удалось получить состояние VPN-ядра"));}
     }};
-    private void finishTunnel(String state,String detail){closeResources();StateStore.set(this,state,detail);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
+    private void finishTunnel(String state,String detail){DiagnosticJournal.record("error".equals(state)?"connection.failed":"connection.disconnected",new JSONObject());closeResources();StateStore.set(this,state,detail);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
     private void closeResources(){
         running=false;main.removeCallbacks(monitor);closeTun();
-        Engine oldEngine=engine;engine=null;if(oldEngine!=null)oldEngine.stop();
+        Engine oldEngine=engine;engine=null;if(oldEngine!=null)oldEngine.stop();DiagnosticJournal.drain();
 
     }
     @Override public void onRevoke(){control.execute(()->finishTunnel("stopped","Разрешение VPN отозвано системой"));}
