@@ -9,6 +9,7 @@ final class BlinkIcon extends Drawable {
     BlinkIcon(String name,int color){this.name=name;this.color=color;}
     @Override public void draw(Canvas canvas){Rect b=getBounds();int save=canvas.save();canvas.translate(b.left,b.top);canvas.scale(b.width()/24f,b.height()/24f);p.setColor(color);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1.7f);p.setStrokeCap(Paint.Cap.ROUND);p.setStrokeJoin(Paint.Join.ROUND);Path s=new Path();
         switch(name){
+        case "server":canvas.drawRoundRect(3,3,21,21,3,3,p);canvas.drawLine(3,12,21,12,p);canvas.drawCircle(7,7.5f,.7f,p);canvas.drawCircle(7,16.5f,.7f,p);canvas.drawLine(12,7.5f,17,7.5f,p);canvas.drawLine(12,16.5f,17,16.5f,p);break;
         case "power":canvas.drawArc(4,4,20,20,-45,270,false,p);canvas.drawLine(12,2,12,11,p);break;
         case "globe":canvas.drawCircle(12,12,9,p);canvas.drawOval(8,3,16,21,p);canvas.drawLine(3,12,21,12,p);canvas.drawArc(4,5,20,15,15,150,false,p);break;
         case "pulse":s.moveTo(2,12);s.lineTo(7,12);s.lineTo(10,5);s.lineTo(14,19);s.lineTo(17,12);s.lineTo(22,12);canvas.drawPath(s,p);break;

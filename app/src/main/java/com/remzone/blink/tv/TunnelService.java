@@ -56,7 +56,7 @@ public final class TunnelService extends VpnService {
             if(VpnService.prepare(this)!=null)throw new Exception("Подтвердите разрешение VPN в сетевых настройках");
             JSONObject saved=new SecureStore(this).load();DiagnosticJournal.begin(this,saved);
             String mode=saved.optString("mode","vk");
-            StateStore.mode=mode;StateStore.turnTransport=VKOptions.from(saved).transport;StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
+            StateStore.mode=mode;StateStore.turnTransport="auto";StateStore.tx=0;StateStore.rx=0;StateStore.egress="";StateStore.probe="Проверка ещё не выполнялась";StateStore.timings="";importedProfile=null;
             if("profile".equals(mode)){
                 importedProfile=new JSONObject(Mobile.importProfile(ProfilesStore.selected(saved).getString("source")));
                 profileName=importedProfile.getString("name");StateStore.set(this,"connecting","Подготовка обычного VPN-профиля…");
@@ -67,7 +67,8 @@ public final class TunnelService extends VpnService {
                 int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
                 StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
                 if("wireguard".equals(s.profiles.get(selected).backend))importedProfile=new JSONObject(Mobile.importProfile(s.profiles.get(selected).wireguard));
-                engine=Mobile.startVK(VKOptions.from(saved).nativeJSON(s.profiles.get(selected),mode,s.expiresAt),this::writePacket,fd->protect((int)fd));
+                StateStore.turnTransport=s.profiles.get(selected).options==null?"auto":s.profiles.get(selected).options.optString("transport","auto");
+                engine=Mobile.startVK(new VKOptions().nativeJSON(s.profiles.get(selected),mode,s.expiresAt),this::writePacket,fd->protect((int)fd));
                 profileName=s.profiles.get(selected).name;
             }
             running=true;unreadySince=android.os.SystemClock.elapsedRealtime();lastNative="";main.post(monitor);
@@ -134,7 +135,7 @@ public final class TunnelService extends VpnService {
             if("stopped".equals(state)){control.execute(()->finishTunnel("error","Срок подписки закончился или ядро остановлено. Обновите подписку."));return;}
             if("ready".equals(state))unreadySince=0;else if(unreadySince==0)unreadySince=android.os.SystemClock.elapsedRealtime();
             if(!state.equals(lastNative)){
-                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("profile".equals(StateStore.mode)?"Настройки VPN применены. Проверьте интернет; это не подтверждение удалённого соединения.":"vk".equals(StateStore.mode)?"VK TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры VK."):"Восстановление соединения…");
+                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("profile".equals(StateStore.mode)?"Настройки VPN применены. Проверьте интернет; это не подтверждение удалённого соединения.":"vk".equals(StateStore.mode)?"TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры VK."):"Восстановление соединения…");
                 getSystemService(NotificationManager.class).notify(17,notification(StateStore.label()));
             }else StateStore.notifyChanged(TunnelService.this);
             if(!"ready".equals(state)&&unreadySince>0&&android.os.SystemClock.elapsedRealtime()-unreadySince>45000){control.execute(()->finishTunnel("error","Сервер не ответил за 45 секунд. Обычная сеть восстановлена."));return;}

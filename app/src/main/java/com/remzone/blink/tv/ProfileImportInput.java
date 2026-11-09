@@ -10,6 +10,10 @@ final class ProfileImportInput {
     final String source;
     final String subscriptionURL;
     private ProfileImportInput(String source, String url) { this.source=source; this.subscriptionURL=url; }
+    boolean isTURNSubscription() {
+        if(subscriptionURL==null)return false;
+        try { Subscription.validateURL(subscriptionURL);return true; } catch(Exception ignored){return false;}
+    }
     static ProfileImportInput parse(String source) throws Exception { return resolve(source,0); }
     private static String decode(String value) throws Exception {
         return URLDecoder.decode(value.replace("+","%2B"), StandardCharsets.UTF_8.name());

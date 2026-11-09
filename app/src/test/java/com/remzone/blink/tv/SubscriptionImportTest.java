@@ -24,6 +24,15 @@ public class SubscriptionImportTest {
             try{ProfileImportInput.parse(bad);fail("Invalid input accepted");}catch(SubscriptionHTTP.Failure expected){}
         }
     }
+    @Test public void panelSubscriptionsAreRoutedToTURNBeforeStandardParser()throws Exception{
+        String url="https://panel.example/vokop-panel/api/vokop/v1/subscriptions/"+"A".repeat(43);
+        for(String value:new String[]{url,"[Подписка]("+url+")","<"+url+">","hiddify://import/"+url,url.replace("https:","http:")}){
+            ProfileImportInput input=ProfileImportInput.parse(value);assertTrue(input.isTURNSubscription());assertEquals(url,input.subscriptionURL);
+        }
+        assertFalse(ProfileImportInput.parse(FEED).isTURNSubscription());
+        assertFalse(ProfileImportInput.parse(NODE).isTURNSubscription());
+        assertFalse(ProfileImportInput.parse(url+"/account").isTURNSubscription());
+    }
     static class Reply extends HttpsURLConnection {
         final int status;final String location,body;boolean disconnected;
         Reply(URL url,int status,String location,String body){super(url);this.status=status;this.location=location;this.body=body;}
