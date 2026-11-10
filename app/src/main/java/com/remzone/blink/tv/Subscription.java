@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 final class Subscription {
-    JSONObject routing;
+    JSONObject routing,metadata; JSONArray vpnProfiles;String botURL="";
     final long revision,issuedAt,expiresAt; final List<Profile> profiles;
     Subscription(long r,long i,long e,List<Profile> p){revision=r;issuedAt=i;expiresAt=e;profiles=p;}
     static final class Profile {
@@ -19,7 +19,7 @@ final class Subscription {
         Profile(String i,String n,String u,String h,int p,String c,int s){id=i;name=n;uuid=u;host=h;port=p;call=c;streams=s;}
         String nativeJSON(String mode,String dns,long expiry)throws Exception{return nativeJSON(mode,dns,expiry,"auto");}
         String nativeJSON(String mode,String dns,long expiry,String transport)throws Exception{
-            if(!transport.equals("auto")&&!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите Авто, TCP или UDP для VK");
+            if(!transport.equals("auto")&&!transport.equals("tcp")&&!transport.equals("udp"))throw new Exception("Выберите Авто, TCP или UDP для TURN");
             return new JSONObject().put("backend",backend).put("protocol",protocol).put("wireguard",wireguard).put("wrapKey",wrapKey).put("turnTransport",transport).put("manualCaptcha",true).put("uuid",uuid).put("peerHost",host).put("peerPort",port).put("vkCallURL",call).put("streams",streams).put("dnsServer",dns).put("mode",mode).put("expiresAt",expiry).toString();
         }
     }
@@ -53,7 +53,8 @@ final class Subscription {
             if(profile.options!=null&&!VKOptions.from(new JSONObject().put("vkOptions",profile.options)).valid())throw new Exception("Неверные настройки панели");
             profiles.add(profile);
         }
-        Subscription result=new Subscription(r,i,e,profiles);result.routing=o.optJSONObject("routing");
+        Subscription result=new Subscription(r,i,e,profiles);result.routing=o.optJSONObject("routing");result.metadata=o.optJSONObject("metadata");result.botURL=ManagedSubscription.botURL(o.optString("bot_url"));
+        if(o.has("vpn_profiles")&&!o.isNull("vpn_profiles")){result.vpnProfiles=o.getJSONArray("vpn_profiles");int size=0;if(result.vpnProfiles.length()>128)throw new Exception("Слишком много VPN-профилей");for(int n=0;n<result.vpnProfiles.length();n++){Object item=result.vpnProfiles.get(n);if(!(item instanceof String))throw new Exception("Неверный VPN-профиль");size+=((String)item).length();}if(size>524288)throw new Exception("Слишком большая подписка");}
         if("vokop.subscription.v3".equals(o.getString("schema"))&&(result.routing==null||!"blink.routing.v1".equals(result.routing.optString("schema"))||!"selected".equals(result.routing.optString("mode"))))throw new Exception("Нет правил маршрутизации");
         return result;
     }

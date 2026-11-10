@@ -23,7 +23,7 @@ final class VKOptions {
             VKOptions remote=p.options==null?new VKOptions():from(new JSONObject().put("vkOptions",p.options));
             remote.serverDefaults=false;remote.connections=0;return remote.nativeJSON(p,mode,expiry);
         }
-        if(!valid())throw new Exception("Неверные параметры VK");
+        if(!valid())throw new Exception("Неверные параметры TURN");
         JSONObject tuning=new JSONObject().put("preset",preset).put("mtu",mtu).put("paceKiB",pace).put("window","custom".equals(preset)?window:0).put("intervalMs","custom".equals(preset)?interval:0).put("congestion","custom".equals(preset)&&congestion);
         return new JSONObject(p.nativeJSON(mode,dns,expiry,transport)).put("turnServer",relay).put("streams",connections==0?p.streams:connections).put("tuning",tuning).toString();
     }

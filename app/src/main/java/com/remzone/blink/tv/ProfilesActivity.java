@@ -37,6 +37,10 @@ public final class ProfilesActivity extends Activity {
     @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
     private void render(){
         LinearLayout page=BlinkStyle.page(this,"Мир ближе, чем кажется.","Твои серверы и подписки. Найди своё подключение.");
+        boolean populated=false;try{org.json.JSONArray existing=store.load().optJSONArray("vpnProfiles");populated=existing!=null&&existing.length()>0;}catch(Exception ignored){}
+        LinearLayout actions=BlinkStyle.column(this);page.addView(actions);
+        BlinkStyle.button(this,actions,"Обновить подписки",this::refreshFeed);
+        if(populated){BlinkStyle.button(this,actions,"＋ Добавить",()->new AlertDialog.Builder(this).setTitle("Добавить подключение").setItems(new String[]{"Ссылка или текст","Файл конфигурации"},(d,i)->{if(i==0)paste("");else openFile();}).show());}
         boolean wide=DeviceLayout.twoColumns(getResources().getConfiguration());
         LinearLayout panels=new LinearLayout(this);panels.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);page.addView(panels);
         LinearLayout profiles=BlinkStyle.card(this,panels,"Страны и серверы");
@@ -50,9 +54,7 @@ public final class ProfilesActivity extends Activity {
         count=BlinkStyle.text(this,"",13,BlinkStyle.MUTED);profiles.addView(count);list.setOnItemClickListener((parent,view,position,id)->choose(indices.get(position)));
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int start,int before,int after){}public void onTextChanged(CharSequence s,int start,int before,int after){filter=s.toString();renderProfiles();}public void afterTextChanged(android.text.Editable text){}});
         note=BlinkStyle.text(this,"URI · Xray JSON · Clash · WireGuard · AmneziaWG · TUIC · Hysteria",14,BlinkStyle.MUTED);tools.addView(note);
-        BlinkStyle.button(this,tools,"Добавить ссылку, подписку или .conf",()->paste(""));
-        BlinkStyle.button(this,tools,"Импортировать файл",this::openFile);
-        BlinkStyle.button(this,tools,"Обновить подписку VPN",this::refreshFeed);
+        if(!populated){BlinkStyle.button(this,tools,"Добавить ссылку, подписку или .conf",()->paste(""));BlinkStyle.button(this,tools,"Импортировать файл",this::openFile);}
         BlinkStyle.button(this,tools,"Удалить выбранный профиль",this::removeSelected);
         BlinkStyle.button(this,tools,"Назад к соединению",this::finish);
         renderProfiles();if(DeviceLayout.isTV(this))list.requestFocus();
@@ -75,7 +77,7 @@ public final class ProfilesActivity extends Activity {
         try{JSONArray a=store.load().optJSONArray("vpnProfiles");LinkedHashSet<String> sources=new LinkedHashSet<>();if(a!=null)for(int i=0;i<a.length();i++){String url=a.getJSONObject(i).optString("subscriptionURL");if(!url.isEmpty())sources.add(url);}String[] urls=sources.toArray(new String[0]);if(urls.length==0){note.setText("Сначала добавьте HTTPS-подписку");return;}String[] names=new String[urls.length];for(int i=0;i<urls.length;i++)names[i]=(i+1)+" · "+new java.net.URI(urls[i]).getHost();new AlertDialog.Builder(this).setTitle("Обновить VPN-подписку").setItems(names,(dialog,which)->importText(urls[which])).setNegativeButton("Отмена",null).show();}catch(Exception e){note.setText("Не удалось прочитать сохранённые ссылки");}
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=77||result!=RESULT_OK||data==null||!canEdit())return;busy=true;worker.execute(()->{try{String text;try(java.io.InputStream in=getContentResolver().openInputStream(data.getData())){text=read(in);}performImport(text,null);}catch(Exception e){error(e);}});}
-    private void importText(String text){if(!canEdit())return;busy=true;worker.execute(()->{try{ProfileImportInput input=ProfileImportInput.parse(text);String url=input.subscriptionURL;if(input.isTURNSubscription()){main.post(()->{busy=false;startActivity(new Intent(this,NetworkActivity.class).putExtra("subscriptionUrl",url));});return;}if(url==null)performImport(input.source,null);else{SubscriptionHTTP.Document document=SubscriptionHTTP.fetchStandardDocument(url);performImport(document.body,url,document.metadata);}}catch(Exception e){error(e);}});}
+    private void importText(String text){if(!canEdit())return;busy=true;worker.execute(()->{try{ProfileImportInput input=ProfileImportInput.parse(text);String url=input.subscriptionURL;if(input.isTURNSubscription()){if(url.equals(store.load().optString("url"))){String document=SubscriptionHTTP.fetch(url);JSONObject before=store.load();Subscription value=Subscription.parse(document,System.currentTimeMillis()/1000,before.optLong("revision"));store.update(current->{if(!url.equals(current.optString("url")))throw new Exception();ManagedSubscription.merge(current,value,url);current.put("document",document).put("revision",value.revision).put("vokopUpdatedAt",System.currentTimeMillis());});main.post(()->{busy=false;renderProfiles();note.setText("Подписка VPN и TURN обновлена.");StateStore.notifyChanged(this);});}else main.post(()->{busy=false;startActivity(new Intent(this,NetworkActivity.class).putExtra("subscriptionUrl",url));});return;}if(url==null)performImport(input.source,null);else{SubscriptionHTTP.Document document=SubscriptionHTTP.fetchStandardDocument(url);performImport(document.body,url,document.metadata);}}catch(Exception e){error(e);}});}
     private void performImport(String text,String url)throws Exception{performImport(text,url,null);}
     private void performImport(String text,String url,JSONObject metadata)throws Exception{
         SubscriptionFeedNotice.validate(text);

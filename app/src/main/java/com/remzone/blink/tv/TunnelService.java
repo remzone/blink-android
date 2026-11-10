@@ -68,7 +68,7 @@ public final class TunnelService extends VpnService {
                 if(!mode.equals("vk")&&!mode.equals("direct"))throw new Exception("Выберите режим туннеля");
                 Subscription s=Subscription.parse(saved.getString("document"),System.currentTimeMillis()/1000,saved.optLong("revision",0));
                 int selected=saved.optInt("selected",0);if(selected<0||selected>=s.profiles.size())throw new Exception("Выберите профиль подписки");
-                StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация VK и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
+                StateStore.set(this,"connecting",mode.equals("vk")?"Авторизация TURN и подключение TURN…":"Прямое DTLS-соединение с UDP-сервером…");
                 if("wireguard".equals(s.profiles.get(selected).backend))importedProfile=new JSONObject(Mobile.importProfile(s.profiles.get(selected).wireguard));
                 StateStore.turnTransport=s.profiles.get(selected).options==null?"auto":s.profiles.get(selected).options.optString("transport","auto");
                 engine=Mobile.startVK(new JSONObject(new VKOptions().nativeJSON(s.profiles.get(selected),mode,s.expiresAt)).put("routing",routing).toString(),this::writePacket,fd->protect((int)fd));
@@ -129,17 +129,17 @@ public final class TunnelService extends VpnService {
         try{
             String state=current.status();if("profile".equals(StateStore.mode)&&"running".equals(state))state="ready";JSONObject counters=new JSONObject(current.statsJSON());StateStore.tx=counters.optLong("tx");StateStore.rx=counters.optLong("rx");
             if("captcha_required".equals(state)){
-                if(!hasPendingCaptcha()){control.execute(()->finishTunnel("captcha_required","VK не выдал доступную проверку или её время истекло. Подключитесь заново."));return;}
+                if(!hasPendingCaptcha()){control.execute(()->finishTunnel("captcha_required","TURN не выдал доступную проверку или её время истекло. Подключитесь заново."));return;}
                 if(tun!=null)control.execute(TunnelService.this::closeTun);
-                unreadySince=0;lastNative=state;StateStore.set(TunnelService.this,state,"Откройте «Пройти проверку VK». Обычная сеть доступна; после проверки продолжится тот же запрос.");
-                getSystemService(NotificationManager.class).notify(17,notification("Пройдите проверку VK"));main.postDelayed(this,1000);return;
+                unreadySince=0;lastNative=state;StateStore.set(TunnelService.this,state,"Откройте «Пройти проверку TURN». Обычная сеть доступна; после проверки продолжится тот же запрос.");
+                getSystemService(NotificationManager.class).notify(17,notification("Пройдите проверку TURN"));main.postDelayed(this,1000);return;
             }
             if("ready".equals(state)&&tun==null){if(!establishing){establishing=true;control.execute(TunnelService.this::establishTun);}main.postDelayed(this,300);return;}
 
             if("stopped".equals(state)){control.execute(()->finishTunnel("error","Срок подписки закончился или ядро остановлено. Обновите подписку."));return;}
             if("ready".equals(state))unreadySince=0;else if(unreadySince==0)unreadySince=android.os.SystemClock.elapsedRealtime();
             if(!state.equals(lastNative)){
-                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("profile".equals(StateStore.mode)?"Настройки VPN применены. Проверьте интернет; это не подтверждение удалённого соединения.":"vk".equals(StateStore.mode)?"TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры VK."):"Восстановление соединения…");
+                lastNative=state;StateStore.set(TunnelService.this,"ready".equals(state)?"ready":"connecting","ready".equals(state)?("profile".equals(StateStore.mode)?"Настройки VPN применены. Проверьте интернет; это не подтверждение удалённого соединения.":"vk".equals(StateStore.mode)?"TURN ("+StateStore.turnTransport.toUpperCase(java.util.Locale.ROOT)+") готов. Проверьте доступ в интернет.":"Прямой DTLS-туннель готов. Это не проверка инфраструктуры TURN."):"Восстановление соединения…");
                 getSystemService(NotificationManager.class).notify(17,notification(StateStore.label()));
             }else StateStore.notifyChanged(TunnelService.this);
             if(!"ready".equals(state)&&unreadySince>0&&android.os.SystemClock.elapsedRealtime()-unreadySince>45000){control.execute(()->finishTunnel("error","Сервер не ответил за 45 секунд. Обычная сеть восстановлена."));return;}

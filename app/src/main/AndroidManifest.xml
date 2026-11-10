@@ -16,6 +16,7 @@
         </activity>
         <activity android:name=".RoutingActivity" android:exported="false" />
         <activity android:name=".VKSettingsActivity" android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".LogsActivity" android:exported="false" />
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
         <activity android:name=".ProfilesActivity" android:exported="false" />

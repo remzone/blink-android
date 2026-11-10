@@ -26,7 +26,7 @@ import javax.net.ssl.HttpsURLConnection;
 public final class CaptchaActivity extends Activity {
     private final Handler main=new Handler(Looper.getMainLooper());private String id="",url="",image="";private TextView message;private LinearLayout root;private boolean opening;
     @Override public void onCreate(Bundle state){super.onCreate(state);if(DeviceLayout.isTV(this))getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        LinearLayout page=BlinkStyle.page(this,"Один небольшой шаг.","Пройди проверку TURN — Blink продолжит подключение.");root=BlinkStyle.card(this,page,"Авторизация VK");message=BlinkStyle.text(this,"",18,BlinkStyle.TEXT);root.addView(message);
+        LinearLayout page=BlinkStyle.page(this,"Один небольшой шаг.","Пройди проверку TURN — Blink продолжит подключение.");root=BlinkStyle.card(this,page,"Авторизация TURN");message=BlinkStyle.text(this,"",18,BlinkStyle.TEXT);root.addView(message);
         JSONObject challenge=TunnelService.captcha();id=challenge.optString("id");url=challenge.optString("url");image=challenge.optString("image");if(id.isEmpty()){message.setText("Проверка уже закрыта. Вернитесь и подключитесь заново.");button("Назад",this::finish);return;}
         message.setText("Ручная проверка TURN\nВо время проверки используется обычная сеть. После успешной проверки Blink продолжит подключение.");
         if(!url.isEmpty()){button("Открыть проверку TURN",this::openSDK);main.post(this::openSDK);}else legacyImage();

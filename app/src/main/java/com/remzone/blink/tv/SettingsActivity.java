@@ -1,0 +1,11 @@
+package com.remzone.blink.tv;
+import android.app.*;import android.content.*;import android.os.*;import android.widget.*;import org.json.*;import java.util.concurrent.*;
+public final class SettingsActivity extends Activity {
+ private final ExecutorService worker=Executors.newSingleThreadExecutor();private final Handler main=new Handler(Looper.getMainLooper());private String bot="";private Button open;
+ @Override public void onCreate(Bundle state){super.onCreate(state);LinearLayout page=BlinkStyle.page(this,"Настройки","Подписка, правила и помощь — в одном месте.");LinearLayout account=BlinkStyle.card(this,page,"Моя подписка");open=BlinkStyle.button(this,account,"Открыть бота · подписка и ключи",()->{try{if(!bot.isEmpty())startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(bot)));}catch(ActivityNotFoundException e){Toast.makeText(this,"Откройте ссылку в браузере или Telegram",Toast.LENGTH_SHORT).show();}});open.setEnabled(false);TextView note=BlinkStyle.text(this,"Бот задаётся интеграцией вашего провайдера. В нём доступны управление подпиской и переполучение ключа.",13,BlinkStyle.MUTED);account.addView(note);
+ BlinkStyle.button(this,page,"Маршрутизация",()->startActivity(new Intent(this,RoutingActivity.class)));BlinkStyle.button(this,page,"Журнал · запись, отправка и сброс",()->startActivity(new Intent(this,LogsActivity.class)));BlinkStyle.button(this,page,"Проверка соединения",()->startActivity(new Intent(this,DiagnosticsActivity.class)));BlinkStyle.button(this,page,"Назад",this::finish);
+ worker.execute(()->{try{JSONObject saved=new SecureStore(this).load();String value="";try{value=new JSONObject(saved.optString("document","{}")).optString("bot_url");}catch(Exception ignored){}String cached=ManagedSubscription.botURL(value);main.post(()->apply(cached));String url=saved.optString("url");if(!url.isEmpty()){JSONObject accountStatus=new JSONObject(mobile.Mobile.fetchPanelControl(Subscription.validateURL(url)+"/account",TunnelService::protectControl));String latest=ManagedSubscription.botURL(accountStatus.optString("bot_url"));main.post(()->apply(latest));}}catch(Exception ignored){}});
+ }
+ private void apply(String value){if(isDestroyed())return;bot=value;open.setEnabled(!value.isEmpty());}
+ @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+}
